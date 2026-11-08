@@ -1,0 +1,46 @@
+flowchart TD
+    A["Cloud Scheduler fires<br/>POST /jobs/reconcile"] --> B["Load open cases from Firestore<br/>stage != drs_done, no_drs_below_250k"]
+    B --> C{"Any open cases?"}
+    C -->|no| Z["Return 200, nothing to do"]
+    C -->|yes| D["For each case, enqueue one Cloud Task<br/>dedupe key = quote number"]
+    D --> E["Return 200 immediately<br/>sweep never does work inline"]
+
+    E -.-> F["Cloud Tasks delivers<br/>POST /internal/advance {case_id}"]
+    F --> G["Acquire Firestore lease on case<br/>TTL 10 min"]
+    G --> H{"Lease acquired?"}
+    H -->|no| I["Another worker holds it, drop"]
+    H -->|yes| J["Recompute missing work from evidence"]
+
+    J --> K{"Signed quote missing?<br/>BLOCKS amendment + DRS"}
+    K -->|yes| K1["Re-check Salesforce for the<br/>executed quote PDF, escalate at 72h"]
+    K -->|no| L
+
+    K1 --> L{"TAF, PO or master agreement<br/>missing?<br/>BLOCKS NOTHING"}
+    L -->|yes| L1["Retry only those items,<br/>flag on the Asana task after 72h,<br/>then carry on"]
+    L -->|no| M
+    L1 --> M
+
+    M{"SO exists in NetSuite but<br/>Asana fields empty?"}
+    M -->|yes| M1["Populate only the empty fields<br/>covers missed webhooks"]
+    M -->|no| N
+    M1 --> N
+
+    N{"RA exists but<br/>RA number not written?"}
+    N -->|yes| N1["Write RA number"]
+    N -->|no| O
+    N1 --> O
+
+    O{"TCV >= 250k and RA present<br/>and workbook not done?"}
+    O -->|yes| O1["Build DRS workbook, upload to SharePoint"]
+    O -->|no| P
+    O1 --> P
+
+    P["Persist stage results + evidence<br/>increment attempt counters"]
+    P --> Q{"Any stage past<br/>retry budget?"}
+    Q -->|yes| Q1["Mark needs_human<br/>comment on Asana task<br/>raise Cloud Monitoring alert"]
+    Q -->|no| R["Release lease"]
+    Q1 --> R
+
+    R --> S{"All stages terminal?"}
+    S -->|yes| T["Close case"]
+    S -->|no| U["Leave open for next sweep"]

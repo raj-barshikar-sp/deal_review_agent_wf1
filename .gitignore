@@ -1,0 +1,6 @@
+.env
+downloaded_docs/
+screenshots/
+cookie.json
+__pycache__/
+*.swp

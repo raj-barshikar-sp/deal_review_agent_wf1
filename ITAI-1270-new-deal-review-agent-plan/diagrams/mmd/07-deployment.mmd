@@ -1,0 +1,49 @@
+flowchart TB
+    classDef repo fill:#e8f0fe,stroke:#1a73e8,color:#174ea6
+    classDef env fill:#e6f4ea,stroke:#137333,color:#0d652d
+
+    subgraph R["sailpoint/gemini-enterprise-agents"]
+        direction TB
+        A1["agents/new_deal_review_agent/<br/>agent.py (root_agent)<br/>requirements.txt<br/>agent.env, .agent_engine_config.json<br/>orchestrator/, stages/, connectors/, drs/"]:::repo
+        A2["a2a_apps/new_deal_review_agent/<br/>app.py (FastAPI: webhooks + jobs + A2A)<br/>Procfile, config.json, requirements.txt"]:::repo
+        A3["tools/<br/>netsuite.py, asana.py, sharepoint_graph.py<br/>(promoted from agent-local once stable)"]:::repo
+    end
+
+    subgraph CI["GitHub Actions"]
+        direction TB
+        T1["test.yml - pytest + evals on every push"]
+        T2["deploy.yml - detects changed agents/ folders"]
+        T3["cicd_scripts/deploy_a2a.sh<br/>copies agents/ and tools/ into a2a_apps/<br/>gcloud run deploy --source .<br/>--no-allow-unauthenticated"]
+        T4["cicd_scripts/setup_infrastructure.sh<br/>API Gateway, A2A_PUBLIC_URL<br/>(only if webhooks are enabled)"]
+    end
+
+    subgraph ENVS["Promotion path, region us-central1"]
+        direction LR
+        E1["dev<br/>gemini-enterprise-dev-485017<br/>SF + NS sandboxes"]:::env
+        E2["stg<br/>gemini-enterprise-staging"]:::env
+        E3["uat<br/>gemini-enterprise-uat<br/>analyst UAT, shadow mode"]:::env
+        E4["prod<br/>sailpoint-gemini-enterprise<br/>live tracker"]:::env
+    end
+
+    subgraph RT["Per-environment runtime"]
+        direction LR
+        RT1["Cloud Run<br/>new-deal-review-agent<br/>min 0, max 5, 1 CPU, 2Gi, 900s"]
+        RT2["Cloud Scheduler jobs<br/>poll 5 min, reconcile 15 min<br/>OIDC as invoker SA"]
+        RT3["Cloud Tasks queue<br/>ndra-advance"]
+        RT4["Firestore (native)<br/>deals, events, runs"]
+        RT5["GCS bucket<br/>ndra-staging"]
+        RT6["Secret Manager<br/>SF, NetSuite, Asana, Entra"]
+    end
+
+    A1 --> T2
+    A2 --> T2
+    A3 --> T2
+    T1 --> T2
+    T2 --> T3 --> T4
+    T3 --> E1 --> E2 --> E3 --> E4
+    E4 --> RT
+    RT2 --> RT1
+    RT1 --> RT3 --> RT1
+    RT1 --> RT4
+    RT1 --> RT5
+    RT1 --> RT6

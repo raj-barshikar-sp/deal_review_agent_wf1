@@ -1,0 +1,69 @@
+stateDiagram-v2
+    direction TB
+
+    [*] --> pa_detected: PA email detected<br/>(Power Automate push or Graph poll)
+
+    pa_detected --> task_created: Asana task upserted with<br/>name, description, delivery date,<br/>period (MMM YYYY), quote number
+
+    state fork_tracks <<fork>>
+    task_created --> fork_tracks
+
+    note right of task_created
+      THREE independent tracks.
+      Only track 3 can reach the DRS, and it
+      needs nothing from the PDFs.
+    end note
+
+    state "Track 1 - document pack - blocks NOTHING" as T1 {
+        direction TB
+        [*] --> pack_in_progress
+        pack_in_progress --> pack_complete: signed quote, TAF, PO,<br/>master agreement in SharePoint
+        pack_in_progress --> pack_partial: still missing after 72h<br/>flagged on the Asana task
+        pack_complete --> [*]
+        pack_partial --> [*]
+    }
+
+    state "Track 2 - amendment - blocks only the Order Type write" as T2 {
+        direction TB
+        [*] --> signed_quote_in
+        signed_quote_in --> amendment_checked: executed quote PDF analysed
+        amendment_checked --> [*]
+    }
+
+    state "Track 3 - enrichment and DRS - needs NetSuite only" as T3 {
+        direction TB
+        [*] --> so_enriched
+        so_enriched --> ra_ready: Revenue Arrangement exists,<br/>RA number written to Asana
+        ra_ready --> drs_done: TCV >= $250,000 USD<br/>workbook built and uploaded
+        ra_ready --> no_drs_below_250k: TCV < $250,000 USD<br/>Review Signoff Threshold = "N/A"<br/>Preparer Status = "N/A - below threshold"
+        drs_done --> [*]
+        no_drs_below_250k --> [*]
+    }
+
+    fork_tracks --> T1
+    fork_tracks --> T2
+    fork_tracks --> T3
+
+    T2 --> T3: soft link only - not a gate.<br/>If the DRS is built first it records<br/>amendment_status = not yet analysed,<br/>and affected cells are rebuilt later.
+
+    state join_done <<join>>
+    T1 --> join_done
+    T2 --> join_done
+    T3 --> join_done
+    join_done --> [*]
+
+    note left of T3
+      The RA comes from a MANUAL daily job
+      run by the revenue team, and only
+      as-needed at month end. A case may
+      sit in so_enriched for days.
+      Do not alert on it.
+    end note
+
+    note right of T1
+      No delivery notice exists any more
+      (discontinued 14 Oct 2026).
+      All documents are attached in
+      Salesforce at Closed/Won, so this
+      track is normally a single pass.
+    end note

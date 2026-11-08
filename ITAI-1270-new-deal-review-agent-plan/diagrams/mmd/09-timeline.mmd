@@ -1,0 +1,30 @@
+flowchart TB
+    classDef sf fill:#e3f2fd,stroke:#1565c0,color:#0d47a1
+    classDef ns fill:#fff3e0,stroke:#e65100,color:#bf360c
+    classDef ag fill:#e8f5e9,stroke:#2e7d32,color:#1b5e20
+    classDef wait fill:#fff9c4,stroke:#f9a825,color:#f57f17
+
+    T0["<b>T0 - Opportunity Closed / Won in Salesforce</b><br/>PA email sent by Salesforce, revenue team BCC'd<br/>Quote signed and ALL documents attached at this same moment"]:::sf
+    A0["<b>Agent:</b> detect PA email, create Asana task<br/>pull signed quote + TAF, PO, master agreement in one pass<br/>analyse executed quote for amendment language<br/><i>task_created, signed_quote_in, pack, amendment_checked</i>"]:::ag
+
+    W1["<b>WAIT: hours to days</b><br/>OTC team reviews and activates the order"]:::wait
+
+    T1["<b>Order activated in Salesforce</b><br/>the SF integration automatically creates<br/>the Sales Order in NetSuite"]:::ns
+    A1["<b>Agent:</b> SuiteScript push or SuiteQL poll<br/>write TCV, Customer Size, SO/RMA, project codes,<br/>Order Date, Currency, Product<br/><i>so_enriched</i>"]:::ag
+
+    W2["<b>WAIT: until the next run of a MANUAL job</b><br/>revenue team triggers RA creation in NetSuite<br/>daily, but only as-needed at month end"]:::wait
+
+    T2["<b>Revenue Arrangement created</b>"]:::ns
+    A2["<b>Agent:</b> write RA number<br/><i>ra_ready</i>"]:::ag
+
+    T3{"TCV gate"}
+    A3A["<b>TCV >= $250,000</b><br/>build DRS workbook, upload to SharePoint,<br/>link on the task, mark ready for review<br/><i>drs_done</i>"]:::ag
+    A3B["<b>TCV < $250,000</b><br/>task stays fully populated<br/>Review Signoff Threshold = N/A<br/>Preparer Status = N/A - below threshold<br/><i>no_drs_below_250k</i>"]:::ag
+
+    T0 --> A0 --> W1 --> T1 --> A1 --> W2 --> T2 --> A2 --> T3
+    T3 --> A3A
+    T3 --> A3B
+
+    N1["<b>Design consequences</b><br/>1. Documents are complete at T0, so the pack is a single pass, not a chase.<br/>2. Nothing is 'stuck' before the Sales Order - that gap is normal business process.<br/>3. The RA is a manual job that can lag for days at month end, so a case must stay<br/>open for weeks and the stuck-case alert must not fire on a waiting RA."]
+
+    A2 -.-> N1

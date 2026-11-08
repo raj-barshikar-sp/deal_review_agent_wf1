@@ -1,0 +1,82 @@
+flowchart TB
+    classDef gcp fill:#e8f0fe,stroke:#1a73e8,color:#174ea6
+    classDef ext fill:#fff4e5,stroke:#e8710a,color:#8a4600
+    classDef data fill:#e6f4ea,stroke:#137333,color:#0d652d
+    classDef llm fill:#f3e8fd,stroke:#8430ce,color:#5b1d9c
+
+    subgraph TRIG["Triggers"]
+        direction LR
+        SCHED["Cloud Scheduler<br/>reconcile sweep every 15 min<br/>mail poll every 5 min<br/>BASELINE - no licence needed"]:::gcp
+        GWH["API Gateway<br/>API key + HMAC shared secret<br/>mints OIDC for Cloud Run"]:::gcp
+        PAUT["Power Automate cloud flow<br/>Outlook trigger to HTTP POST<br/>NEEDS PREMIUM LICENCE"]:::ext
+        NSHOOK["NetSuite SuiteScript<br/>afterSubmit POST<br/>(phase 5, optional)"]:::ext
+    end
+
+    subgraph CR["Cloud Run service: new-deal-review-agent (no-allow-unauthenticated)"]
+        direction TB
+        API["FastAPI ingress<br/>/events/mail  /events/netsuite<br/>/jobs/reconcile  /jobs/poll<br/>/internal/advance  /healthz"]:::gcp
+        ORCH["Deterministic orchestrator<br/>load case - compute missing stages<br/>enqueue one Cloud Task per case"]:::gcp
+        subgraph STAGES["Stage handlers (idempotent, each re-runnable)"]
+            direction LR
+            S1["task_created<br/>Asana task upsert"]
+            S2["signed_quote_in<br/>executed quote PDF only<br/>CRITICAL PATH"]
+            S3["amendment_checked<br/>order type + cancelled-quote subtask"]
+            S2B["pack_in_progress<br/>TAF, PO, master agreement<br/>BEST EFFORT"]
+            S4["so_enriched<br/>TCV, size, SO/RMA, project codes"]
+            S5["ra_ready<br/>RA number"]
+            S6["drs_done<br/>DRS workbook build + upload"]
+        end
+        subgraph AGENT["ADK agent - judgment only, never drives control flow"]
+            direction LR
+            L1["PA email extractor<br/>name, description,<br/>delivery date, period, quote #"]:::llm
+            L2["Document classifier<br/>signed quote / TAF / PO /<br/>master agreement"]:::llm
+            L3["Amendment analyst<br/>executed quote PDF to<br/>amendment + cancelled quotes"]:::llm
+            L4["DRS variance narrator<br/>delta and date Yes/No checks"]:::llm
+        end
+        CONN["Connector layer<br/>retry, backoff, rate limit, audit log"]:::gcp
+    end
+
+    subgraph STATE["State and secrets"]
+        FS[("Firestore<br/>deals - events - runs<br/>stage status + evidence")]:::data
+        GCS[("GCS<br/>PDF / XLSX staging<br/>DRS template cache")]:::data
+        SM[("Secret Manager<br/>SF JWT key, NetSuite TBA,<br/>Asana PAT, Entra client secret")]:::data
+        TASKS["Cloud Tasks<br/>per-case queue, dedup,<br/>bounded concurrency"]:::gcp
+    end
+
+    subgraph EXT["Systems of record"]
+        direction LR
+        MBX["Shared mailbox / alias<br/>PA email only (revenue team BCC'd)<br/>MS Graph Mail.Read"]:::ext
+        SFDC["Salesforce<br/>Quote, Files, Agreements<br/>REST + JWT bearer"]:::ext
+        NS["NetSuite<br/>Sales Order, Revenue Arrangement<br/>SuiteQL + REST Record, TBA"]:::ext
+        ASANA["Asana<br/>FY'27 Deal Review Tracker"]:::ext
+        SHP["SharePoint Finance<br/>customer / New Deals / month<br/>Graph Sites.Selected"]:::ext
+    end
+
+    VAI["Vertex AI - Gemini"]:::gcp
+    OBS["Cloud Logging + Monitoring<br/>stuck-stage alert, per-deal trace"]:::gcp
+
+    SCHED --> API
+    GWH -->|"OIDC token"| API
+    NSHOOK --> GWH
+    PAUT --> GWH
+
+    API --> ORCH
+    ORCH --> TASKS
+    TASKS -->|"POST /internal/advance"| API
+    ORCH --> STAGES
+    STAGES --> AGENT
+    STAGES --> CONN
+    AGENT --> VAI
+
+    ORCH <--> FS
+    STAGES <--> FS
+    STAGES <--> GCS
+    CONN --> SM
+
+    CONN --> MBX
+    CONN --> SFDC
+    CONN --> NS
+    CONN --> ASANA
+    CONN --> SHP
+
+    CR --> OBS

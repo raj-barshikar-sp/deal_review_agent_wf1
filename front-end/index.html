@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Deal review</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      height: 100vh;
+      display: flex;
+      font: 15px/1.4 system-ui, sans-serif;
+      color: #1c1c1c;
+    }
+    .pane {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      padding: 16px;
+    }
+    .pane + .pane { border-left: 1px solid #d5d5d5; }
+    h1 { margin: 0; font-size: 18px; }
+    label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+    input, textarea {
+      width: 100%;
+      font: inherit;
+      padding: 8px;
+      border: 1px solid #bdbdbd;
+      border-radius: 6px;
+    }
+    textarea { min-height: 110px; resize: vertical; }
+    button.action {
+      align-self: flex-start;
+      font: inherit;
+      padding: 8px 14px;
+      border: 0;
+      border-radius: 6px;
+      background: #0b5fff;
+      color: white;
+      cursor: pointer;
+    }
+    button.action:disabled { opacity: 0.6; cursor: wait; }
+    .status { min-height: 1.2em; color: #8a1f1f; }
+    .checks { display: flex; flex-direction: column; gap: 6px; }
+    .check {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      text-align: left;
+      font: inherit;
+      padding: 6px 8px;
+      border: 1px solid #d5d5d5;
+      border-radius: 6px;
+      background: white;
+      cursor: pointer;
+    }
+    .check:disabled { cursor: default; color: #666; }
+    .check[aria-pressed="true"] { border-color: #0b5fff; background: #eef4ff; }
+    .mark {
+      width: 18px;
+      height: 18px;
+      border: 1px solid #888;
+      border-radius: 3px;
+      display: grid;
+      place-items: center;
+      flex: none;
+    }
+    .check.ok .mark { background: #137333; color: white; border-color: #137333; }
+    .preview {
+      flex: 1;
+      min-height: 180px;
+      border: 1px solid #d5d5d5;
+      border-radius: 6px;
+      overflow: auto;
+      background: #fafafa;
+    }
+    .preview iframe, .preview img { width: 100%; height: 100%; border: 0; object-fit: contain; background: white; }
+    table { border-collapse: collapse; width: 100%; font-size: 12px; background: white; }
+    th, td { border: 1px solid #e4e4e4; padding: 4px 6px; text-align: left; vertical-align: top; }
+    th { background: #f3f3f3; }
+  </style>
+</head>
+<body>
+  <section class="pane">
+    <h1>Purchase acknowledgement</h1>
+    <label>Subject <input id="subject" autocomplete="off"></label>
+    <label>Body <textarea id="body"></textarea></label>
+    <button class="action" id="ack-button" type="button">Send purchase acknowledgement</button>
+    <p class="status" id="ack-status"></p>
+    <div class="checks" id="ack-checks"></div>
+    <div class="preview" id="ack-preview"></div>
+  </section>
+  <section class="pane">
+    <h1>Quote lines</h1>
+    <label>Quote number <input id="quote" autocomplete="off" placeholder="Q-123456"></label>
+    <button class="action" id="quote-button" type="button">Fetch quote lines</button>
+    <p class="status" id="quote-status"></p>
+    <div class="checks" id="quote-checks"></div>
+    <div class="preview" id="quote-preview"></div>
+  </section>
+  <script>
+    const KINDS = [
+      ["purchase_order", "Purchase order"],
+      ["fully_executed_quote", "Fully executed quote"],
+      ["transaction_approval_form", "Transaction approval form"],
+      ["master_agreement", "Master agreement"],
+    ];
+
+    function errorText(data) {
+      const detail = data && data.detail;
+      if (typeof detail === "string") return detail;
+      if (detail && typeof detail.error === "string") return detail.error;
+      if (Array.isArray(detail)) return detail.map((item) => item.msg || "Invalid request").join("; ");
+      return "";
+    }
+
+    function payloadOf(data) {
+      const detail = data && data.detail;
+      if (detail && typeof detail === "object" && !Array.isArray(detail)) return { ...data, ...detail };
+      return data || {};
+    }
+
+    function showFile(preview, path) {
+      const url = "/files?path=" + encodeURIComponent(path);
+      preview.replaceChildren();
+      if (/\.(png|jpe?g|webp|gif)$/i.test(path)) {
+        const image = document.createElement("img");
+        image.src = url;
+        image.alt = path;
+        preview.append(image);
+        return;
+      }
+      const frame = document.createElement("iframe");
+      frame.src = url;
+      frame.title = path;
+      preview.append(frame);
+    }
+
+    function showRecords(preview, records) {
+      preview.replaceChildren();
+      const rows = records || [];
+      if (!rows.length) {
+        preview.textContent = "No quote lines were returned.";
+        return;
+      }
+      const keys = Object.keys(rows[0]).filter((key) => key !== "attributes");
+      const table = document.createElement("table");
+      const head = document.createElement("tr");
+      for (const key of keys) {
+        const cell = document.createElement("th");
+        cell.textContent = key;
+        head.append(cell);
+      }
+      table.append(head);
+      for (const row of rows) {
+        const line = document.createElement("tr");
+        for (const key of keys) {
+          const cell = document.createElement("td");
+          const value = row[key];
+          cell.textContent = value == null ? "" : typeof value === "object" ? JSON.stringify(value) : String(value);
+          line.append(cell);
+        }
+        table.append(line);
+      }
+      preview.append(table);
+    }
+
+    function renderChecks(container, preview, checks) {
+      container.replaceChildren();
+      preview.replaceChildren();
+      for (const item of checks) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "check" + (item.ok ? " ok" : "");
+        button.disabled = !item.show;
+        const mark = document.createElement("span");
+        mark.className = "mark";
+        mark.textContent = item.ok ? "✓" : "";
+        const text = document.createElement("span");
+        text.textContent = item.label;
+        button.append(mark, text);
+        if (item.show) {
+          button.addEventListener("click", () => {
+            for (const other of container.querySelectorAll(".check")) other.setAttribute("aria-pressed", "false");
+            button.setAttribute("aria-pressed", "true");
+            item.show();
+          });
+        }
+        container.append(button);
+      }
+    }
+
+    function documentChecks(documents, preview) {
+      const docs = (documents && documents.documents) || {};
+      return KINDS.map(([key, label]) => {
+        const item = docs[key] || { status: "missing" };
+        const paths = item.path ? [item.path] : item.paths || [];
+        const found = item.status === "found" && paths.length > 0;
+        return {
+          ok: found,
+          label: found ? (item.title || label) : label + " — " + (item.status || "missing"),
+          show: found ? () => showFile(preview, paths[0]) : null,
+        };
+      });
+    }
+
+    async function post(url, body) {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await response.json().catch(() => ({}));
+      return { ok: response.ok, data };
+    }
+
+    document.getElementById("ack-button").addEventListener("click", async () => {
+      const button = document.getElementById("ack-button");
+      const status = document.getElementById("ack-status");
+      const checks = document.getElementById("ack-checks");
+      const preview = document.getElementById("ack-preview");
+      button.disabled = true;
+      status.textContent = "Working…";
+      try {
+        const result = await post("/purchase-acknowledge", {
+          subject: document.getElementById("subject").value,
+          body: document.getElementById("body").value,
+        });
+        const payload = payloadOf(result.data);
+        const items = [];
+        if (payload.task_name) {
+          items.push({
+            ok: Boolean(payload.asana_gid),
+            label: payload.asana_gid ? "Asana task " + payload.task_name : "Task fields extracted",
+            show: () => showRecords(preview, [{
+              task_name: payload.task_name,
+              description: payload.description,
+              delivery_date: payload.delivery_date,
+              period: payload.period,
+              quote_number: payload.quote_number,
+              asana_url: payload.asana_url || "",
+            }]),
+          });
+        }
+        items.push(...documentChecks(payload.documents, preview));
+        renderChecks(checks, preview, items);
+        status.textContent = result.ok ? "" : errorText(result.data) || "Request failed.";
+      } catch (error) {
+        status.textContent = String(error);
+      } finally {
+        button.disabled = false;
+      }
+    });
+
+    document.getElementById("quote-button").addEventListener("click", async () => {
+      const button = document.getElementById("quote-button");
+      const status = document.getElementById("quote-status");
+      const checks = document.getElementById("quote-checks");
+      const preview = document.getElementById("quote-preview");
+      button.disabled = true;
+      status.textContent = "Working…";
+      try {
+        const result = await post("/quote-lines-drs", {
+          quote_number: document.getElementById("quote").value.trim(),
+        });
+        const payload = payloadOf(result.data);
+        const records = payload.records || [];
+        const items = [{
+          ok: result.ok || records.length > 0,
+          label: "Quote lines (" + (payload.record_count ?? records.length) + ")",
+          show: records.length || result.ok ? () => showRecords(preview, records) : null,
+        }];
+        if (payload.screenshot_path) {
+          items.push({
+            ok: true,
+            label: "Screenshot " + (payload.screenshot_taken_at || ""),
+            show: () => showFile(preview, payload.screenshot_path),
+          });
+        } else {
+          items.push({ ok: false, label: "Screenshot — missing" });
+        }
+        renderChecks(checks, preview, items);
+        status.textContent = result.ok ? "" : errorText(result.data) || "Request failed.";
+      } catch (error) {
+        status.textContent = String(error);
+      } finally {
+        button.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>

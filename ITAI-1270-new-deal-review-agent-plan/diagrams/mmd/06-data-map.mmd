@@ -1,0 +1,41 @@
+flowchart LR
+    classDef src fill:#fff4e5,stroke:#e8710a,color:#8a4600
+    classDef tgt fill:#e6f4ea,stroke:#137333,color:#0d652d
+    classDef key fill:#fce8e6,stroke:#c5221f,color:#a50e0e
+
+    QN(["Correlation key:<br/>Quote Number"]):::key
+
+    subgraph S["Sources"]
+        direction TB
+        PA["Purchase Acknowledgement email"]:::src
+        SFQ["Salesforce Quote + attachments"]:::src
+        SFA["Salesforce agreements"]:::src
+        NSO["NetSuite Sales Order"]:::src
+        NRA["NetSuite Revenue Arrangement"]:::src
+        NEXT["NDT Quote Lines, KR73, KR32<br/>+ related orders"]:::src
+    end
+
+    subgraph T["Targets"]
+        direction TB
+        ASK["Asana task<br/>FY'27 Deal Review Tracker"]:::tgt
+        SPP["SharePoint pack<br/>customer / New Deals / month"]:::tgt
+        DRS["DRS workbook<br/>only when TCV >= $250k"]:::tgt
+    end
+
+    PA -->|"subject to Name<br/>body to Description<br/>created date to Delivery Date<br/>period as MMM YYYY<br/>quote number to Quote Number"| ASK
+    SFQ -->|"signed quote PDF (required)<br/>TAF and PO when title matches"| SPP
+    SFQ -->|"amendment detected:<br/>Order Type = Amendment - Draft<br/>cancelled quotes as Q1 / Q2<br/>+ subtask"| ASK
+    SFA -->|"master agreement<br/>EULA, End User, SLA, SaaS"| SPP
+    NSO -->|"amount USD to TCV + TCV bucket<br/>customer class to Customer Size<br/>document number to SO/RMA<br/>project codes, Order Date,<br/>Currency, Product"| ASK
+    NRA -->|"RA number"| ASK
+    THR{{"TCV gate"}} -->|"TCV >= $250k:<br/>Review Signoff Threshold set<br/>Preparer Status set for DRS prep"| ASK
+    THR -->|"TCV < $250k:<br/>Review Signoff Threshold = N/A<br/>Preparer Status = N/A - below threshold<br/>task still fully populated"| ASK
+    NSO --> THR
+    NEXT -->|"SF Quote Extract, NS RA Extract,<br/>NS Plan Extract tabs<br/>Excel export + screenshot"| DRS
+    NSO -->|"deal size, customer size, currency, term<br/>date Yes/No, yellow when delta > $75k<br/>other SOs >= $500k within 90 days"| DRS
+    SPP -.->|"DRS saved alongside pack"| DRS
+
+    QN -.-> PA
+    QN -.-> SFQ
+    QN -.-> NSO
+    QN -.-> ASK

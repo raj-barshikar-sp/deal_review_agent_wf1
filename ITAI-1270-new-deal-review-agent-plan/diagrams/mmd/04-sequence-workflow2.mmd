@@ -1,0 +1,63 @@
+sequenceDiagram
+    autonumber
+    participant SCH as Cloud Scheduler
+    participant SVC as Cloud Run<br/>new-deal-review-agent
+    participant FS as Firestore
+    participant NS as NetSuite
+    participant GEM as Gemini<br/>(ADK agent)
+    participant AS as Asana
+    participant SP as SharePoint
+
+    Note over SCH,SP: Workflow 2 - NetSuite Sales Order and Revenue Arrangement to enriched task + DRS
+
+    SCH->>SVC: POST /jobs/reconcile (OIDC)
+    SVC->>FS: load open cases
+    FS-->>SVC: cases with so_enriched or ra_ready pending
+    SVC->>NS: SuiteQL - sales orders where Original Quote ID in (open quote numbers)
+    NS-->>SVC: SO rows (amount USD, customer class, document number, project codes)
+
+    Note over SVC,AS: amendment analysis needs the signed quote ONLY -<br/>no dependency on TAF, PO or the master agreement
+
+    SVC->>SVC: fetch executed (signed) quote PDF from staging
+    SVC->>GEM: does this quote contain amendment language?<br/>which quote numbers are cancelled?
+    GEM-->>SVC: is_amendment, cancelled_quotes[], confidence
+
+    alt amendment detected with high confidence
+        SVC->>AS: Order Type = "Amendment - Draft"
+        SVC->>AS: Quote Number = "Q-1001 / Q-0988 / Q-0954"
+        SVC->>AS: create subtask for cancelled quotes
+        SVC->>FS: amendment_done = done
+    else no amendment
+        SVC->>FS: amendment_done = done (no action)
+    end
+
+    SVC->>AS: write TCV, Customer Size, SO/RMA number, project codes<br/>(only fields currently empty)
+    SVC->>FS: so_enriched = done
+
+    SVC->>NS: SuiteQL - revenue arrangement for this SO
+    alt RA exists
+        NS-->>SVC: RA number
+        SVC->>AS: write RA number
+        SVC->>FS: ra_ready = done
+    else RA not created yet
+        SVC->>FS: leave ra_ready pending
+        Note right of FS: next sweep checks again
+    end
+
+    alt TCV >= $250,000 USD and RA present
+        SVC->>SP: copy DRS template into customer / New Deals / <month>
+        SVC->>NS: export NDT Quote Lines, KR73, KR32
+        SVC->>NS: related orders - other SOs >= $500k within 90 days
+        SVC->>SVC: build extract tabs<br/>(SF Quote Extract, NS RA Extract, NS Plan Extract)
+        SVC->>GEM: review tab checks - deal size, customer size,<br/>currency, term, date Yes/No
+        GEM-->>SVC: review values + variance notes
+        SVC->>SVC: highlight yellow where delta > $75,000
+        SVC->>SP: upload as<br/>"DRS - M.DD.YYYY - Account Name (MM.YYYY)"
+        SVC->>AS: link DRS on the task, mark ready for review
+        SVC->>FS: drs_done = done
+    else TCV < $250,000 USD
+        SVC->>AS: Review Signoff Threshold = "N/A"
+        SVC->>AS: Preparer Status = "N/A - below threshold"
+        Note right of AS: the task is still fully populated:<br/>period, Delivery Date, Quote Number, Product,<br/>Order Date, SO/RMA, RA number,<br/>Order Type, Currency, TCV bucket
+        SVC->>FS: no_drs_below_250k - case closed
+    end

@@ -1,0 +1,48 @@
+sequenceDiagram
+    autonumber
+    participant MBX as Shared mailbox<br/>(Outlook)
+    participant PA as Power Automate<br/>cloud flow
+    participant KV as Azure Key Vault<br/>(shared secret)
+    participant AGW as GCP API Gateway<br/>public HTTPS endpoint
+    participant CR as Cloud Run<br/>new-deal-review-agent<br/>(no-allow-unauthenticated)
+    participant SM as Secret Manager
+    participant FS as Firestore
+
+    Note over MBX,FS: How Power Automate reaches a private Cloud Run service
+
+    MBX->>PA: trigger "When a new email arrives"<br/>(standard Outlook connector)
+    PA->>PA: filter on subject / sender rule
+    PA->>KV: read shared secret
+    KV-->>PA: secret
+
+    PA->>PA: build body = {messageId, subject, body,<br/>receivedDateTime, attachments[]}
+    PA->>PA: timestamp = now (RFC3339)<br/>signature = HMAC-SHA256(secret, timestamp + "." + body)
+
+    PA->>AGW: POST /events/mail  [PREMIUM HTTP action]<br/>x-api-key, X-NDRA-Timestamp,<br/>X-NDRA-Signature, X-NDRA-Event-Id
+
+    AGW->>AGW: validate x-api-key, apply quota
+    AGW->>CR: forward with Google OIDC token<br/>minted from the gateway service account
+    CR->>CR: Cloud Run IAM accepts the OIDC token<br/>(this is what keeps the service private)
+
+    CR->>SM: read shared secret (cached)
+    SM-->>CR: secret
+    CR->>CR: recompute HMAC, compare with hmac.compare_digest
+    CR->>CR: reject if timestamp older than 5 minutes (replay guard)
+
+    CR->>FS: has X-NDRA-Event-Id been seen?
+    alt already processed
+        FS-->>CR: yes
+        CR-->>AGW: 200 OK (no-op, idempotent)
+    else new event
+        FS-->>CR: no
+        CR->>FS: record event, create or load deal case
+        CR-->>AGW: 202 Accepted
+        Note right of CR: work is enqueued to Cloud Tasks,<br/>never done inline, so the flow<br/>gets a fast response
+    end
+
+    AGW-->>PA: 202 Accepted
+
+    alt non-2xx or timeout
+        PA->>PA: retry policy, exponential, 4 attempts
+        Note over PA,CR: If every retry fails the scheduled<br/>Graph poll still picks the email up.<br/>Push is an accelerator, not the only path.
+    end

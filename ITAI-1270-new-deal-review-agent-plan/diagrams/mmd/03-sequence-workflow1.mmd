@@ -1,0 +1,65 @@
+sequenceDiagram
+    autonumber
+    participant SCH as Cloud Scheduler
+    participant SVC as Cloud Run<br/>new-deal-review-agent
+    participant FS as Firestore
+    participant TQ as Cloud Tasks
+    participant GR as MS Graph<br/>(mailbox)
+    participant GEM as Gemini<br/>(ADK agent)
+    participant AS as Asana
+    participant SF as Salesforce
+    participant SP as SharePoint
+
+    Note over SCH,SP: Workflow 1 - Purchase Acknowledgement email to populated task + document pack
+
+    SCH->>SVC: POST /jobs/poll (OIDC)
+    SVC->>GR: delta query on shared mailbox since watermark
+    GR-->>SVC: new messages
+    SVC->>SVC: filter PA emails by subject/sender rule
+    SVC->>FS: dedupe on internetMessageId
+    FS-->>SVC: not seen before
+
+    SVC->>GEM: extract name, description, delivery date,<br/>period (MMM YYYY), quote number
+    GEM-->>SVC: structured PA fields + confidence
+
+    alt confidence below threshold
+        SVC->>FS: stage = needs_human, reason recorded
+        SVC->>AS: comment on tracker for analyst review
+    else confident
+        SVC->>FS: create deal case keyed on quote number
+        SVC->>AS: upsert task in FY'27 Deal Review Tracker<br/>(write only empty fields)
+        AS-->>SVC: task gid
+        SVC->>FS: stage task_created = done, evidence = task gid
+    end
+
+    SVC->>TQ: enqueue advance(case_id), dedupe key = quote number
+    TQ->>SVC: POST /internal/advance
+
+    Note over SVC,SP: Track A - signed quote only, this is the critical path
+
+    SVC->>SF: query Quote by quote number, list attached files
+    SF-->>SVC: ContentVersion list + agreements
+    SVC->>GEM: which file is the executed (signed) quote?
+    GEM-->>SVC: signed quote content id + confidence
+    SVC->>SF: download signed quote PDF
+    SVC->>SP: ensure path customer / New Deals / <month>, upload
+    SVC->>FS: signed_quote_in = done, store content hash
+
+    Note right of SVC: amendment analysis can start NOW.<br/>It needs nothing else from the pack.
+
+    Note over SVC,SP: Track B - rest of the pack, best effort, never blocks
+
+    SVC->>GEM: classify remaining files - TAF / PO /<br/>master agreement (EULA, End User, SLA, SaaS)
+    GEM-->>SVC: labels + confidence
+    SVC->>SF: download matched files
+    Note right of SF: all documents are attached at<br/>Closed/Won, so this is normally<br/>a single pass, not a chase
+    SVC->>SP: upload (skip files already present)
+    SP-->>SVC: item ids
+    SVC->>FS: record per-document evidence
+
+    alt pack complete
+        SVC->>FS: pack_complete
+    else something missing
+        SVC->>FS: pack_partial, note which documents are missing
+        Note right of FS: reconciler retries only the missing items.<br/>Enrichment and the DRS proceed regardless.
+    end
