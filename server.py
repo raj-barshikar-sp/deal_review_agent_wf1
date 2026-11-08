@@ -1,6 +1,7 @@
 """Listener for purchase-acknowledgement emails and quote-line requests."""
 
 import asyncio
+import os
 import re
 import threading
 from datetime import date
@@ -12,17 +13,31 @@ import salesforce
 import screenshot
 import uvicorn
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, RedirectResponse
 from pydantic import BaseModel, ValidationError, field_validator
 
-HOST = "127.0.0.1"
-PORT = 8000
+HOST = "0.0.0.0"
+PORT = int(os.environ.get("PORT", "8000"))
 PA_SUFFIX = " - Purchase Acknowledgement for SailPoint Offerings"
 QUOTE_IN_BODY = re.compile(r"\bQ-\d{6}\b")
 QUOTE_EXACT = re.compile(r"^Q-\d{6}$")
 MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
 
 app = FastAPI()
+# Pages on other origins may call this API only if listed in CORS_ORIGINS (comma separated).
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        origin.strip()
+        for origin in os.environ.get(
+            "CORS_ORIGINS", "http://127.0.0.1:8000,http://localhost:8000"
+        ).split(",")
+        if origin.strip()
+    ],
+    allow_methods=["GET", "POST"],
+    allow_headers=["Content-Type"],
+)
 FRONT_END = Path(__file__).resolve().parent / "front-end"
 FILE_ROOTS = (
     Path(salesforce.DOWNLOAD_DIR).resolve(),

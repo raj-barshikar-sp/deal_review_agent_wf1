@@ -102,6 +102,7 @@
     <div class="preview" id="quote-preview"></div>
   </section>
   <script>
+    const API = location.origin.startsWith("http") ? location.origin : "";
     const KINDS = [
       ["purchase_order", "Purchase order"],
       ["fully_executed_quote", "Fully executed quote"],
@@ -124,7 +125,7 @@
     }
 
     function showFile(preview, path) {
-      const url = "/files?path=" + encodeURIComponent(path);
+      const url = API + "/files?path=" + encodeURIComponent(path);
       preview.replaceChildren();
       if (/\.(png|jpe?g|webp|gif)$/i.test(path)) {
         const image = document.createElement("img");
@@ -225,7 +226,7 @@
       button.disabled = true;
       status.textContent = "Working…";
       try {
-        const result = await post("/purchase-acknowledge", {
+        const result = await post(API + "/purchase-acknowledge", {
           subject: document.getElementById("subject").value,
           body: document.getElementById("body").value,
         });
@@ -263,7 +264,7 @@
       button.disabled = true;
       status.textContent = "Working…";
       try {
-        const result = await post("/quote-lines-drs", {
+        const result = await post(API + "/quote-lines-drs", {
           quote_number: document.getElementById("quote").value.trim(),
         });
         const payload = payloadOf(result.data);
