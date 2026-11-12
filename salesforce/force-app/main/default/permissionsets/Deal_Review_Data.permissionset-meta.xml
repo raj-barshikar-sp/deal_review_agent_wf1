@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<PermissionSet xmlns="http://soap.sforce.com/2006/04/metadata">
+    <label>Deal Review Data</label>
+    <description>Create and edit deals, quotes, and quote lines.</description>
+    <hasActivationRequired>false</hasActivationRequired>
+    <fieldPermissions><editable>true</editable><field>Deal__c.Account_Name__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>true</editable><field>Deal__c.Stage__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>true</editable><field>Deal__c.Close_Date__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>true</editable><field>Deal__c.Amount__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>true</editable><field>Quote__c.Deal__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>true</editable><field>Quote__c.Status__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>true</editable><field>Quote__c.Currency_Code__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>true</editable><field>Quote_Line__c.Quote__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>true</editable><field>Quote_Line__c.Quote_Number__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>true</editable><field>Quote_Line__c.Product_Code__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>true</editable><field>Quote_Line__c.Product_Name__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>true</editable><field>Quote_Line__c.Product_Family__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>true</editable><field>Quote_Line__c.Quantity__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>true</editable><field>Quote_Line__c.Effective_Start_Date__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>true</editable><field>Quote_Line__c.Effective_End_Date__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>true</editable><field>Quote_Line__c.Prorated_List_Price__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>true</editable><field>Quote_Line__c.Prorated_List_Price_Converted__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>true</editable><field>Quote_Line__c.Net_Unit_Price__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>true</editable><field>Quote_Line__c.Net_Unit_Price_Converted__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>true</editable><field>Quote_Line__c.Total_Discount__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>true</editable><field>Quote_Line__c.Net_Total__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>true</editable><field>Quote_Line__c.Net_Total_Converted__c</field><readable>true</readable></fieldPermissions>
+    <fieldPermissions><editable>true</editable><field>Quote_Line__c.Line_Currency__c</field><readable>true</readable></fieldPermissions>
+    <objectPermissions>
+        <allowCreate>true</allowCreate><allowDelete>true</allowDelete><allowEdit>true</allowEdit><allowRead>true</allowRead>
+        <modifyAllRecords>true</modifyAllRecords><object>Deal__c</object><viewAllFields>true</viewAllFields><viewAllRecords>true</viewAllRecords>
+    </objectPermissions>
+    <objectPermissions>
+        <allowCreate>true</allowCreate><allowDelete>true</allowDelete><allowEdit>true</allowEdit><allowRead>true</allowRead>
+        <modifyAllRecords>true</modifyAllRecords><object>Quote__c</object><viewAllFields>true</viewAllFields><viewAllRecords>true</viewAllRecords>
+    </objectPermissions>
+    <objectPermissions>
+        <allowCreate>true</allowCreate><allowDelete>true</allowDelete><allowEdit>true</allowEdit><allowRead>true</allowRead>
+        <modifyAllRecords>true</modifyAllRecords><object>Quote_Line__c</object><viewAllFields>true</viewAllFields><viewAllRecords>true</viewAllRecords>
+    </objectPermissions>
+</PermissionSet>
