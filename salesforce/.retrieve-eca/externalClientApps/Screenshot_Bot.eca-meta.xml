@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ExternalClientApplication xmlns="http://soap.sforce.com/2006/04/metadata">
+    <contactEmail>raj.barshikar@sailpoint.com</contactEmail>
+    <distributionState>Local</distributionState>
+    <isProtected>false</isProtected>
+    <label>Screenshot Bot</label>
+    <orgScopedExternalApp>00Dak00001Q6u9l:Screenshot_Bot</orgScopedExternalApp>
+</ExternalClientApplication>

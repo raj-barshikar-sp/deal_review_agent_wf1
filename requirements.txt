@@ -2,3 +2,4 @@ fastapi
 uvicorn
 selenium
 pillow
+PyJWT[crypto]

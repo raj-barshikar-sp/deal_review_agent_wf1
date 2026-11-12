@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ExtlClntAppOauthSettings xmlns="http://soap.sforce.com/2006/04/metadata">
+    <commaSeparatedOauthScopes>Api, Web, RefreshToken</commaSeparatedOauthScopes>
+    <externalClientApplication>Deal_Review_Agent</externalClientApplication>
+    <isFirstPartyAppEnabled>false</isFirstPartyAppEnabled>
+    <label>Deal_Review_Agent_oauth</label>
+    <oauthLink>00Dak00001Q6u9l:888ak000002vMDx</oauthLink>
+</ExtlClntAppOauthSettings>

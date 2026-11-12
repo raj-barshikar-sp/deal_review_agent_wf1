@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ExtlClntAppOauthSettings xmlns="http://soap.sforce.com/2006/04/metadata">
+    <commaSeparatedOauthScopes>Api, Web, RefreshToken</commaSeparatedOauthScopes>
+    <externalClientApplication>Screenshot_Bot</externalClientApplication>
+    <isFirstPartyAppEnabled>false</isFirstPartyAppEnabled>
+    <label>Screenshot_Bot_oauth</label>
+    <oauthLink>00Dak00001Q6u9l:888ak000002vSjB</oauthLink>
+</ExtlClntAppOauthSettings>
