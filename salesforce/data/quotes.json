@@ -1,0 +1,25 @@
+{
+  "records": [
+    {
+      "attributes": {"type": "Quote__c", "referenceId": "Q100231"},
+      "Name": "Q-100231",
+      "Deal__c": "@Fidelity",
+      "Status__c": "Approved",
+      "Currency_Code__c": "USD"
+    },
+    {
+      "attributes": {"type": "Quote__c", "referenceId": "Q127182"},
+      "Name": "Q-127182",
+      "Deal__c": "@Fidelity",
+      "Status__c": "Approved",
+      "Currency_Code__c": "USD"
+    },
+    {
+      "attributes": {"type": "Quote__c", "referenceId": "Q127183"},
+      "Name": "Q-127183",
+      "Deal__c": "@Acme",
+      "Status__c": "Draft",
+      "Currency_Code__c": "USD"
+    }
+  ]
+}

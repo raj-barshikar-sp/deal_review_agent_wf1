@@ -1,0 +1,20 @@
+{
+  "records": [
+    {
+      "attributes": {"type": "Deal__c", "referenceId": "Fidelity"},
+      "Name": "Fidelity Renewal",
+      "Account_Name__c": "Fidelity Investments",
+      "Stage__c": "Negotiation",
+      "Close_Date__c": "2026-12-15",
+      "Amount__c": 22000
+    },
+    {
+      "attributes": {"type": "Deal__c", "referenceId": "Acme"},
+      "Name": "Acme Expansion",
+      "Account_Name__c": "Acme Corp",
+      "Stage__c": "Prospecting",
+      "Close_Date__c": "2026-11-30",
+      "Amount__c": 8400
+    }
+  ]
+}
