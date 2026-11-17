@@ -43,8 +43,10 @@
       cursor: pointer;
     }
     button.action:disabled { opacity: 0.6; cursor: wait; }
+    button.action.secondary { background: white; color: #0b5fff; border: 1px solid #0b5fff; }
+    .actions { display: flex; gap: 8px; flex-wrap: wrap; }
     .status { min-height: 1.2em; color: #8a1f1f; }
-    .checks { display: flex; flex-direction: column; gap: 6px; }
+    .checks { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 6px; }
     .check {
       display: flex;
       gap: 8px;
@@ -69,15 +71,45 @@
       flex: none;
     }
     .check.ok .mark { background: #137333; color: white; border-color: #137333; }
-    .preview {
-      flex: 1;
-      min-height: 180px;
-      border: 1px solid #d5d5d5;
-      border-radius: 6px;
-      overflow: auto;
-      background: #fafafa;
+    .viewer {
+      position: fixed;
+      inset: 0;
+      z-index: 10;
+      display: flex;
+      padding: 20px;
+      background: rgba(20, 20, 20, 0.55);
     }
-    .preview iframe, .preview img { width: 100%; height: 100%; border: 0; object-fit: contain; background: white; }
+    .viewer[hidden] { display: none; }
+    .viewer-panel {
+      flex: 1;
+      min-width: 0;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      background: white;
+      border-radius: 10px;
+      overflow: hidden;
+    }
+    .viewer-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 12px;
+      border-bottom: 1px solid #e4e4e4;
+    }
+    .viewer-bar h2 {
+      flex: 1;
+      min-width: 0;
+      margin: 0;
+      font-size: 16px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .viewer-count { color: #555; font-size: 13px; }
+    .viewer-body { position: relative; flex: 1; min-height: 0; overflow: auto; background: #fafafa; }
+    .viewer-body iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: white; }
+    .viewer-body img { display: block; max-width: 100%; height: auto; margin: 0 auto; background: white; }
     table { border-collapse: collapse; width: 100%; font-size: 12px; background: white; }
     th, td { border: 1px solid #e4e4e4; padding: 4px 6px; text-align: left; vertical-align: top; }
     th { background: #f3f3f3; }
@@ -88,10 +120,12 @@
     <h1>Purchase acknowledgement</h1>
     <label>Subject <input id="subject" autocomplete="off"></label>
     <label>Body <textarea id="body"></textarea></label>
-    <button class="action" id="ack-button" type="button">Send purchase acknowledgement</button>
+    <div class="actions">
+      <button class="action secondary" id="ack-fill" type="button">Autofill email</button>
+      <button class="action" id="ack-button" type="button">Send purchase acknowledgement</button>
+    </div>
     <p class="status" id="ack-status"></p>
     <div class="checks" id="ack-checks"></div>
-    <div class="preview" id="ack-preview"></div>
   </section>
   <section class="pane">
     <h1>Quote lines</h1>
@@ -99,8 +133,19 @@
     <button class="action" id="quote-button" type="button">Fetch quote lines</button>
     <p class="status" id="quote-status"></p>
     <div class="checks" id="quote-checks"></div>
-    <div class="preview" id="quote-preview"></div>
   </section>
+  <div id="viewer" class="viewer" hidden>
+    <div class="viewer-panel" role="dialog" aria-modal="true" aria-labelledby="viewer-title">
+      <div class="viewer-bar">
+        <button class="action secondary" id="viewer-prev" type="button">Previous</button>
+        <button class="action secondary" id="viewer-next" type="button">Next</button>
+        <h2 id="viewer-title"></h2>
+        <span class="viewer-count" id="viewer-count"></span>
+        <button class="action secondary" id="viewer-close" type="button">Close</button>
+      </div>
+      <div id="viewer-body" class="viewer-body"></div>
+    </div>
+  </div>
   <script>
     const API = location.origin.startsWith("http") ? location.origin : "";
     const KINDS = [
@@ -169,43 +214,96 @@
       preview.append(table);
     }
 
-    function renderChecks(container, preview, checks) {
+    let viewerItems = [];
+    let viewerIndex = 0;
+
+    function showViewerItem() {
+      const item = viewerItems[viewerIndex];
+      const body = document.getElementById("viewer-body");
+      document.getElementById("viewer-title").textContent = item.title;
+      document.getElementById("viewer-count").textContent = (viewerIndex + 1) + " of " + viewerItems.length;
+      document.getElementById("viewer-prev").disabled = viewerIndex === 0;
+      document.getElementById("viewer-next").disabled = viewerIndex === viewerItems.length - 1;
+      for (const entry of viewerItems) {
+        if (entry.button) entry.button.setAttribute("aria-pressed", entry === item ? "true" : "false");
+      }
+      if (item.path) showFile(body, item.path);
+      else showRecords(body, item.records);
+    }
+
+    function openViewer(items, index) {
+      viewerItems = items;
+      viewerIndex = index;
+      showViewerItem();
+      const viewer = document.getElementById("viewer");
+      viewer.hidden = false;
+      document.body.style.overflow = "hidden";
+      document.getElementById("viewer-close").focus();
+    }
+
+    function closeViewer() {
+      const viewer = document.getElementById("viewer");
+      if (viewer.hidden) return;
+      viewer.hidden = true;
+      document.body.style.overflow = "";
+      document.getElementById("viewer-body").replaceChildren();
+      const current = viewerItems[viewerIndex];
+      viewerItems = [];
+      if (current && current.button) current.button.focus();
+    }
+
+    function stepViewer(delta) {
+      const next = viewerIndex + delta;
+      if (next < 0 || next >= viewerItems.length) return;
+      viewerIndex = next;
+      showViewerItem();
+    }
+
+    function renderChecks(container, checks) {
       container.replaceChildren();
-      preview.replaceChildren();
+      const openable = [];
       for (const item of checks) {
         const button = document.createElement("button");
         button.type = "button";
         button.className = "check" + (item.ok ? " ok" : "");
-        button.disabled = !item.show;
+        button.disabled = !item.open;
         const mark = document.createElement("span");
         mark.className = "mark";
         mark.textContent = item.ok ? "✓" : "";
         const text = document.createElement("span");
         text.textContent = item.label;
         button.append(mark, text);
-        if (item.show) {
-          button.addEventListener("click", () => {
-            for (const other of container.querySelectorAll(".check")) other.setAttribute("aria-pressed", "false");
-            button.setAttribute("aria-pressed", "true");
-            item.show();
-          });
-        }
+        if (item.open) openable.push({ open: item.open, button });
         container.append(button);
       }
+      openable.forEach((entry, index) => {
+        entry.button.addEventListener("click", () => {
+          openViewer(openable.map((item) => ({ ...item.open(), button: item.button })), index);
+        });
+      });
     }
 
-    function documentChecks(documents, preview) {
+    function documentChecks(documents) {
       const docs = (documents && documents.documents) || {};
-      return KINDS.map(([key, label]) => {
+      const checks = [];
+      for (const [key, label] of KINDS) {
         const item = docs[key] || { status: "missing" };
         const paths = item.path ? [item.path] : item.paths || [];
-        const found = item.status === "found" && paths.length > 0;
-        return {
-          ok: found,
-          label: found ? (item.title || label) : label + " — " + (item.status || "missing"),
-          show: found ? () => showFile(preview, paths[0]) : null,
-        };
-      });
+        const titles = item.title ? [item.title] : item.titles || [];
+        if (item.status !== "found" || !paths.length) {
+          checks.push({ ok: false, label: label + " — " + (item.status || "missing") });
+          continue;
+        }
+        paths.forEach((path, index) => {
+          const title = titles[index] || label;
+          checks.push({
+            ok: true,
+            label: title,
+            open: () => ({ title, path }),
+          });
+        });
+      }
+      return checks;
     }
 
     async function post(url, body) {
@@ -218,11 +316,23 @@
       return { ok: response.ok, data };
     }
 
+    document.getElementById("ack-fill").addEventListener("click", () => {
+      document.getElementById("subject").value = "Test - Purchase Acknowledgement for SailPoint Offerings";
+      document.getElementById("body").value = [
+        "Hello,",
+        "",
+        "This is a purchase acknowledgement for the Test account.",
+        "The signed quote is Q-127182. The purchase order, transaction approval form, and master agreement are attached.",
+        "",
+        "Regards,",
+        "SailPoint Revenue Operations",
+      ].join("\n");
+    });
+
     document.getElementById("ack-button").addEventListener("click", async () => {
       const button = document.getElementById("ack-button");
       const status = document.getElementById("ack-status");
       const checks = document.getElementById("ack-checks");
-      const preview = document.getElementById("ack-preview");
       button.disabled = true;
       status.textContent = "Working…";
       try {
@@ -236,18 +346,21 @@
           items.push({
             ok: Boolean(payload.asana_gid),
             label: payload.asana_gid ? "Asana task " + payload.task_name : "Task fields extracted",
-            show: () => showRecords(preview, [{
-              task_name: payload.task_name,
-              description: payload.description,
-              delivery_date: payload.delivery_date,
-              period: payload.period,
-              quote_number: payload.quote_number,
-              asana_url: payload.asana_url || "",
-            }]),
+            open: () => ({
+              title: "Asana task " + payload.task_name,
+              records: [{
+                task_name: payload.task_name,
+                description: payload.description,
+                delivery_date: payload.delivery_date,
+                period: payload.period,
+                quote_number: payload.quote_number,
+                asana_url: payload.asana_url || "",
+              }],
+            }),
           });
         }
-        items.push(...documentChecks(payload.documents, preview));
-        renderChecks(checks, preview, items);
+        items.push(...documentChecks(payload.documents));
+        renderChecks(checks, items);
         status.textContent = result.ok ? "" : errorText(result.data) || "Request failed.";
       } catch (error) {
         status.textContent = String(error);
@@ -260,7 +373,6 @@
       const button = document.getElementById("quote-button");
       const status = document.getElementById("quote-status");
       const checks = document.getElementById("quote-checks");
-      const preview = document.getElementById("quote-preview");
       button.disabled = true;
       status.textContent = "Working…";
       try {
@@ -272,23 +384,43 @@
         const items = [{
           ok: result.ok || records.length > 0,
           label: "Quote lines (" + (payload.record_count ?? records.length) + ")",
-          show: records.length || result.ok ? () => showRecords(preview, records) : null,
+          open: records.length || result.ok ? () => ({ title: "Quote lines " + (payload.quote_number || ""), records }) : null,
         }];
         if (payload.screenshot_path) {
           items.push({
             ok: true,
             label: "Screenshot " + (payload.screenshot_taken_at || ""),
-            show: () => showFile(preview, payload.screenshot_path),
+            open: () => ({ title: "Screenshot " + (payload.screenshot_taken_at || ""), path: payload.screenshot_path }),
           });
         } else {
           items.push({ ok: false, label: "Screenshot — missing" });
         }
-        renderChecks(checks, preview, items);
+        renderChecks(checks, items);
         status.textContent = result.ok ? "" : errorText(result.data) || "Request failed.";
       } catch (error) {
         status.textContent = String(error);
       } finally {
         button.disabled = false;
+      }
+    });
+
+    document.getElementById("viewer-prev").addEventListener("click", () => stepViewer(-1));
+    document.getElementById("viewer-next").addEventListener("click", () => stepViewer(1));
+    document.getElementById("viewer-close").addEventListener("click", closeViewer);
+    document.getElementById("viewer").addEventListener("click", (event) => {
+      if (event.target === event.currentTarget) closeViewer();
+    });
+    document.addEventListener("keydown", (event) => {
+      if (document.getElementById("viewer").hidden) return;
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeViewer();
+      } else if (event.key === "ArrowLeft") {
+        event.preventDefault();
+        stepViewer(-1);
+      } else if (event.key === "ArrowRight") {
+        event.preventDefault();
+        stepViewer(1);
       }
     });
   </script>

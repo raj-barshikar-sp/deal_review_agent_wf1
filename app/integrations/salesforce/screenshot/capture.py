@@ -29,6 +29,22 @@ def _redact(message, token):
     return message.replace(token, "[token]").replace(urllib.parse.quote(token, safe=""), "[token]")
 
 
+def _proof_url(current, requested):
+    """URL a reviewer can open. Never the frontdoor link, which carries the session."""
+    parts = urllib.parse.urlsplit(current or "")
+    query = [
+        (key, value)
+        for key, value in urllib.parse.parse_qsl(parts.query, keep_blank_values=True)
+        if key.lower() != "sid"
+    ]
+    cleaned = urllib.parse.urlunsplit(
+        (parts.scheme, parts.netloc, parts.path, urllib.parse.urlencode(query), "")
+    )
+    if "/lightning/r/Report/" in cleaned:
+        return cleaned
+    return requested or cleaned
+
+
 def _save_error_shot(driver, quote):
     if driver is None:
         return ""
@@ -65,7 +81,7 @@ def capture(quote):
             rows = 0
         taken_at = datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S %z")
         png = driver.get_screenshot_as_png()
-        landed = driver.current_url.split("?")[0]
+        landed = _proof_url(driver.current_url, page_url)
     except Exception as exc:
         debug = _save_error_shot(driver, quote)
         message = _redact(str(exc), token)
@@ -81,7 +97,7 @@ def capture(quote):
     safe_time = taken_at.replace(" ", "T").replace(":", "").replace("+", "")
     path = SCREENSHOT_DIR / ("quote-lines-" + quote + "-" + safe_time + ".png")
     path.write_bytes(png)
-    stamp(path, taken_at)
+    stamp(path, taken_at, landed)
     _log_shot(taken_at, quote, str(path), landed, rows)
     return {
         "path": str(path),

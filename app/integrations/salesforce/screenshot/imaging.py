@@ -18,12 +18,31 @@ def _font(size):
     return ImageFont.load_default()
 
 
-def stamp(path, taken_at):
-    """Draw the capture time in a bar above the screenshot."""
+def _wrap(draw, text, font, width):
+    lines, rest = [], text
+    while rest:
+        if draw.textlength(rest, font=font) <= width:
+            lines.append(rest)
+            break
+        cut = len(rest)
+        while cut > 1 and draw.textlength(rest[:cut], font=font) > width:
+            cut -= 1
+        lines.append(rest[:cut])
+        rest = rest[cut:]
+    return lines or [""]
+
+
+def stamp(path, taken_at, page_url):
+    """Draw the capture time and the page URL in a bar above the screenshot."""
     image = Image.open(path).convert("RGB")
-    font = _font(22)
-    bar = 40
+    title_font, url_font = _font(22), _font(18)
+    draw = ImageDraw.Draw(image)
+    url_lines = _wrap(draw, page_url, url_font, image.width - 24)
+    bar = 46 + 26 * len(url_lines)
     canvas = Image.new("RGB", (image.width, image.height + bar), (17, 17, 17))
     canvas.paste(image, (0, bar))
-    ImageDraw.Draw(canvas).text((12, 8), "Screenshot taken " + taken_at, fill=(255, 255, 255), font=font)
+    draw = ImageDraw.Draw(canvas)
+    draw.text((12, 8), "Screenshot taken " + taken_at, fill=(255, 255, 255), font=title_font)
+    for index, line in enumerate(url_lines):
+        draw.text((12, 40 + 26 * index), line, fill=(255, 255, 255), font=url_font)
     canvas.save(path, format="PNG")
