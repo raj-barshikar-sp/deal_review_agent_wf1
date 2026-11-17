@@ -177,5 +177,5 @@ At least 2 GB memory, 2 CPUs, a 300-second request timeout, and concurrency 1. O
 ## 7. Quick check after setup
 
 1. Log in as an admin and open **NDT - Quote Lines**. Set the Quote Number filter to a real quote, such as `Q-127182`. Rows should appear.
-2. Engineering runs `test_salesforce_ss_test.py` with `SCREENSHOT_TEST_QUOTE=Q-127182`. A PNG of that quote's lines should be saved.
+2. Engineering runs `python -m scripts.screenshot_smoke` with `SCREENSHOT_TEST_QUOTE=Q-127182`. A PNG of that quote's lines should be saved.
 3. Engineering calls `/purchase-acknowledge` with the same quote. The quote PDFs and the agreement files should download.

@@ -7,3 +7,7 @@ downloaded_docs
 screenshots
 __pycache__
 *.swp
+.pytest_cache
+docs
+salesforce_metadata
+tests

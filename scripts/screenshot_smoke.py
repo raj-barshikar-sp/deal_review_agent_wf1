@@ -1,24 +1,26 @@
-"""Run the new screenshot login and capture against the org in .env.
+"""Run the screenshot login and capture against the org in .env.
 
-Usage: .venv/bin/python test_salesforce_ss_test.py
+Usage: SCREENSHOT_TEST_QUOTE=Q-127182 python -m scripts.screenshot_smoke
 """
 
 import os
 import sys
 from pathlib import Path
 
-import screenshot
+from app.integrations.salesforce.screenshot import capture
+from app.integrations.salesforce.screenshot.report import report_page_url
+from app.integrations.salesforce.screenshot.session import web_token
 
 QUOTE = os.environ.get("SCREENSHOT_TEST_QUOTE", "Q-100231")
 
 
 def main():
-    token, instance = screenshot._web_token()
+    token, instance = web_token()
     kind = "jwt" if token.startswith("ey") else "opaque"
     print(f"token minted host={instance} type={kind}", flush=True)
-    page, is_report = screenshot.report_page_url(QUOTE, instance, token)
+    page, is_report = report_page_url(QUOTE, instance, token)
     print(f"report is_report={is_report} url={page.split('?')[0]}", flush=True)
-    shot = screenshot.capture(QUOTE)
+    shot = capture(QUOTE)
     path = Path(shot["path"])
     data = path.read_bytes()
     if not data.startswith(b"\x89PNG"):

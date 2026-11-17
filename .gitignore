@@ -5,3 +5,5 @@ screenshots/
 cookie.json
 __pycache__/
 *.swp
+.venv/
+.pytest_cache/

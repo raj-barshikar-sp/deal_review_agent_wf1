@@ -15,4 +15,4 @@ ENV CHROME_BIN=/usr/bin/chromium
 ENV CHROMEDRIVER=/usr/bin/chromedriver
 ENV PORT=8080
 
-CMD ["python", "server.py"]
+CMD ["python", "-m", "app.main"]
