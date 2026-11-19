@@ -1,9 +1,12 @@
 """Classify, choose, and save the PDFs attached to a quote."""
 
+import os
 import re
+import tempfile
 from pathlib import PurePosixPath
 
 from app.config import DOWNLOAD_DIR
+from app.core.limits import prune_old_files
 
 from .constants import DOCUMENT_KINDS
 
@@ -92,6 +95,7 @@ def save_pdfs(quote, documents):
     """Write each PDF into downloaded_docs next to this file."""
     folder = DOWNLOAD_DIR.resolve()
     folder.mkdir(parents=True, exist_ok=True)
+    prune_old_files(folder)
     used_names = set()
     saved = []
     for document in documents:
@@ -106,6 +110,10 @@ def save_pdfs(quote, documents):
         path = (folder / candidate).resolve()
         if path.parent != folder:
             raise ValueError("Refusing to write outside downloaded_docs.")
-        path.write_bytes(document["data"])
+        # Write then rename so a concurrent request never sees half a file.
+        handle, temp_name = tempfile.mkstemp(dir=folder, suffix=".part")
+        with os.fdopen(handle, "wb") as temp:
+            temp.write(document["data"])
+        os.replace(temp_name, path)
         saved.append(str(path))
     return saved

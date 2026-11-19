@@ -1,5 +1,6 @@
 """Create a Deal Review Tracker task from a purchase acknowledgement."""
 
+import time
 from datetime import date
 from typing import Protocol
 
@@ -97,7 +98,22 @@ def field_value(field: dict, text: str):
     )
 
 
+_PROJECT_TTL_SECONDS = 600
+_project_cache: tuple[str, float] = ("", 0.0)
+
+
 def find_project_gid() -> str:
+    """Project gid, cached so each request does not page through every workspace."""
+    global _project_cache
+    gid, expires = _project_cache
+    if gid and time.monotonic() < expires:
+        return gid
+    gid = _lookup_project_gid()
+    _project_cache = (gid, time.monotonic() + _PROJECT_TTL_SECONDS)
+    return gid
+
+
+def _lookup_project_gid() -> str:
     matches: list[str] = []
     for workspace in get("/workspaces", {"opt_fields": "gid,name"})["data"]:
         params = {"archived": "false", "opt_fields": "gid,name", "limit": "100"}

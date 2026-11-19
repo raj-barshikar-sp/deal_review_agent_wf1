@@ -6,7 +6,7 @@ from datetime import date
 from app.schemas import Email, PurchaseTask
 
 PA_SUFFIX = " - Purchase Acknowledgement for SailPoint Offerings"
-QUOTE_IN_BODY = re.compile(r"\bQ-\d{6}\b")
+QUOTE_IN_BODY = re.compile(r"\bQ-[0-9]{6}\b", re.ASCII)
 MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
 
 

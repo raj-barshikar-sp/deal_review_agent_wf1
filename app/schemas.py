@@ -3,14 +3,14 @@
 import re
 from datetime import date
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 
-QUOTE_EXACT = re.compile(r"^Q-\d{6}$")
+QUOTE_EXACT = re.compile(r"^Q-[0-9]{6}$")
 
 
 class Email(BaseModel):
-    subject: str
-    body: str
+    subject: str = Field(max_length=300)
+    body: str = Field(max_length=50_000)
 
     @field_validator("subject", "body")
     @classmethod
@@ -35,7 +35,7 @@ class CreatedPurchaseTask(PurchaseTask):
 
 
 class Quote(BaseModel):
-    quote_number: str
+    quote_number: str = Field(max_length=20)
 
     @field_validator("quote_number")
     @classmethod
@@ -51,4 +51,6 @@ class QuoteLinesResult(BaseModel):
     records: list
     screenshot_taken_at: str
     screenshot_path: str
+    # PNG inline: Cloud Run may serve the next request from another instance.
+    screenshot_png_base64: str = ""
     page_url: str

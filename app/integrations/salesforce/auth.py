@@ -7,6 +7,7 @@ import threading
 import time
 
 from app.core.env import load_env, update_env_file
+from app.core.log import clean, logger
 
 from .constants import EXPIRY_SKEW_SECONDS
 from .http import form_post, instance_url
@@ -83,7 +84,7 @@ def _introspect_if_supported(token):
     except RuntimeError as exc:
         if "not supported" not in str(exc).lower():
             raise
-        print("salesforce introspect skipped: " + str(exc), flush=True)
+        logger.info("salesforce introspect skipped: %s", clean(exc))
         return None
 
 
@@ -138,7 +139,7 @@ def access_token(force=False):
             if info.get("active") and token_is_current(expiry):
                 _note_token(_cached_token, expiry)
                 return _cached_token
-        print("salesforce token minted", flush=True)
+        logger.info("salesforce token minted")
         minted = _client_credentials()
         expiry = _expiry_from_grant(minted) or _jwt_expiry(minted["access_token"])
         if not expiry:

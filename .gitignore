@@ -7,3 +7,5 @@ __pycache__/
 *.swp
 .venv/
 .pytest_cache/
+.DS_Store
+~$*

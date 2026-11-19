@@ -12,7 +12,7 @@ A single-page front end is served at `/`.
 ```
 .
 ├── app/                         Application package
-│   ├── main.py                  App factory, CORS, uvicorn entry point
+│   ├── main.py                  App factory, same-origin guard, uvicorn entry point
 │   ├── config.py                Paths (.env, downloads, screenshots, certs) and server settings
 │   ├── schemas.py               Pydantic request/response models
 │   ├── routes/                  HTTP layer only: parse, call a service, map errors to HTTP
@@ -112,7 +112,10 @@ Settings come from the process environment, or from a git-ignored `.env` in the 
 | Variable | Default | Notes |
 | --- | --- | --- |
 | `PORT` | `8000` | |
-| `CORS_ORIGINS` | `http://127.0.0.1:8000,http://localhost:8000` | Comma separated |
+| `HOST` | `127.0.0.1` | The Docker image sets `0.0.0.0` |
+| `LOG_LEVEL` | `INFO` | `DEBUG` also logs SOQL and file titles |
+| `RATE_LIMIT_PURCHASE`, `RATE_LIMIT_QUOTE_LINES` | `30`, `6` | Requests per minute per route, `0` disables |
+| `RETENTION_DAYS` | `14` | Generated PDFs and PNGs older than this are deleted, `0` disables |
 | `CHROME_BIN`, `CHROMEDRIVER` | auto | Set in the Docker image |
 
 **Salesforce, REST (documents and quote lines)**

@@ -4,13 +4,15 @@ import json
 import urllib.parse
 import urllib.request
 
+from app.core.log import clean, logger
+
 from .auth import access_token
 from .http import api_version, instance_url, read_response
 
 
 def log(verbose, message):
     if verbose:
-        print(message, flush=True)
+        logger.debug(clean(message, 1000))
 
 
 def get(url, verbose=False, retried=False):
@@ -24,7 +26,8 @@ def get(url, verbose=False, retried=False):
     if status >= 400:
         detail = raw.decode(errors="replace")
         log(verbose, f"  HTTP {status} {detail}")
-        raise RuntimeError(f"Salesforce REST HTTP {status}: {detail}")
+        logger.error("Salesforce REST HTTP %s: %s", status, clean(detail, 1000))
+        raise RuntimeError(f"Salesforce REST HTTP {status}")
     log(verbose, f"  {status} {content_type} {len(raw)} bytes")
     return raw, content_type
 
@@ -42,7 +45,8 @@ def rest_query(query, verbose=False):
             message = "; ".join(
                 item.get("message", str(item)) for item in body if isinstance(item, dict)
             )
-            raise RuntimeError("Salesforce query failed: " + (message or str(body)))
+            logger.error("Salesforce query failed: %s", clean(message or body, 1000))
+            raise RuntimeError("Salesforce query failed")
         records.extend(body.get("records") or [])
         next_url = "" if body.get("done", True) else (body.get("nextRecordsUrl") or "")
         if not next_url:

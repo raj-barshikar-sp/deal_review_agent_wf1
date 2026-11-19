@@ -2,37 +2,40 @@
 
 import asyncio
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
+from app.core.limits import RateLimit
+from app.core.log import clean, logger, public_error
 from app.integrations import asana
 from app.integrations.salesforce import DOCUMENT_KINDS, retrieve_documents
 from app.schemas import CreatedPurchaseTask, Email
 from app.services.purchase import extract_purchase
 
 router = APIRouter()
+limit = RateLimit("purchase", 30)
 
 
-@router.post("/purchase-acknowledge")
-@router.post("/purchase-acknowledgement")
+@router.post("/purchase-acknowledge", dependencies=[Depends(limit)])
+@router.post("/purchase-acknowledgement", dependencies=[Depends(limit)])
 async def purchase_acknowledge(email: Email) -> CreatedPurchaseTask:
     try:
         task = extract_purchase(email)
     except ValueError as exc:
-        print(f"purchase-acknowledge rejected: {exc}", flush=True)
+        logger.info("purchase-acknowledge rejected: %s", clean(exc))
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    print(f"purchase-acknowledge {task.quote_number} {task.task_name}", flush=True)
+    logger.info("purchase-acknowledge %s %s", task.quote_number, clean(task.task_name))
     created, documents = await asyncio.gather(
         asyncio.to_thread(asana.create_task, task),
         retrieve_documents(task.quote_number, verbose=True),
         return_exceptions=True,
     )
     if isinstance(documents, Exception):
-        print(f"purchase-acknowledge documents failed: {documents}", flush=True)
+        message = public_error(documents, "Salesforce document retrieval failed")
         documents = {
             "status": "error",
-            "error_message": str(documents),
+            "error_message": message,
             "documents": {
-                kind: {"status": "error", "error_message": str(documents)}
+                kind: {"status": "error", "error_message": message}
                 for kind in DOCUMENT_KINDS
             },
         }
@@ -42,15 +45,15 @@ async def purchase_acknowledge(email: Email) -> CreatedPurchaseTask:
             for kind, item in (documents.get("documents") or {}).items()
         )
         error = documents.get("error_message") or ""
-        print(
-            f"purchase-acknowledge {task.quote_number} documents={documents.get('status')} {parts} {error}".rstrip(),
-            flush=True,
+        logger.info(
+            "purchase-acknowledge %s documents=%s %s %s",
+            task.quote_number, documents.get("status"), parts, clean(error),
         )
     if isinstance(created, Exception):
         status = created.status if isinstance(created, asana.AsanaError) else 502
         raise HTTPException(
             status_code=status,
-            detail={"error": str(created), "documents": documents},
+            detail={"error": public_error(created, "Asana task creation failed"), "documents": documents},
         )
     return CreatedPurchaseTask(
         **task.model_dump(),

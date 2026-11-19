@@ -9,6 +9,8 @@ from datetime import datetime
 from selenium.webdriver.support.ui import WebDriverWait
 
 from app.config import SCREENSHOT_DIR
+from app.core.limits import prune_old_files
+from app.core.log import clean, logger
 
 from .browser import start_chrome, wait_for_report
 from .imaging import stamp
@@ -18,7 +20,7 @@ from .session import frontdoor_url, lightning_origin, web_token
 
 def _log_shot(taken_at, quote, path, page_url, rows):
     line = f"{taken_at} {quote} {path} {page_url} rows={rows}"
-    print("screenshot " + line, flush=True)
+    logger.info("screenshot %s", clean(line, 600))
     with (SCREENSHOT_DIR / "screenshot.log").open("a", encoding="utf-8") as handle:
         handle.write(line + "\n")
 
@@ -62,6 +64,7 @@ def capture(quote):
     token, instance = web_token()
     page_url, is_report = report_page_url(quote, instance, token)
     SCREENSHOT_DIR.mkdir(parents=True, exist_ok=True)
+    prune_old_files(SCREENSHOT_DIR)
     profile = tempfile.mkdtemp(prefix="dra-chrome-")
     driver = None
     try:
@@ -69,7 +72,7 @@ def capture(quote):
         driver.set_page_load_timeout(60)
         if is_report:
             driver.set_window_size(2500, 2800)
-        print("salesforce frontdoor " + instance + " -> " + lightning_origin(instance), flush=True)
+        logger.info("salesforce frontdoor %s -> %s", instance, lightning_origin(instance))
         driver.get(frontdoor_url(instance, token, page_url))
         if is_report:
             rows = wait_for_report(driver)
@@ -84,10 +87,9 @@ def capture(quote):
         landed = _proof_url(driver.current_url, page_url)
     except Exception as exc:
         debug = _save_error_shot(driver, quote)
-        message = _redact(str(exc), token)
-        if debug:
-            message += " Debug screenshot: " + debug + "."
-        raise RuntimeError(message) from exc
+        # Full detail stays in the server log; callers get a short message.
+        logger.error("screenshot failed: %s debug=%s", clean(_redact(str(exc), token), 2000), debug)
+        raise RuntimeError("Screenshot capture failed") from exc
     finally:
         try:
             if driver is not None:

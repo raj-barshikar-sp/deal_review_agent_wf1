@@ -146,8 +146,9 @@
       <div id="viewer-body" class="viewer-body"></div>
     </div>
   </div>
+  <script src="config.js"></script>
   <script>
-    const API = location.origin.startsWith("http") ? location.origin : "";
+    const API = window.API_BASE || (location.origin.startsWith("http") ? location.origin : "");
     const KINDS = [
       ["purchase_order", "Purchase order"],
       ["fully_executed_quote", "Fully executed quote"],
@@ -167,6 +168,13 @@
       const detail = data && data.detail;
       if (detail && typeof detail === "object" && !Array.isArray(detail)) return { ...data, ...detail };
       return data || {};
+    }
+
+    function showImage(preview, src) {
+      const image = document.createElement("img");
+      image.src = src;
+      image.alt = "Screenshot";
+      preview.replaceChildren(image);
     }
 
     function showFile(preview, path) {
@@ -227,7 +235,8 @@
       for (const entry of viewerItems) {
         if (entry.button) entry.button.setAttribute("aria-pressed", entry === item ? "true" : "false");
       }
-      if (item.path) showFile(body, item.path);
+      if (item.image) showImage(body, item.image);
+      else if (item.path) showFile(body, item.path);
       else showRecords(body, item.records);
     }
 
@@ -390,7 +399,12 @@
           items.push({
             ok: true,
             label: "Screenshot " + (payload.screenshot_taken_at || ""),
-            open: () => ({ title: "Screenshot " + (payload.screenshot_taken_at || ""), path: payload.screenshot_path }),
+            open: () => ({
+              title: "Screenshot " + (payload.screenshot_taken_at || ""),
+              ...(payload.screenshot_png_base64
+                ? { image: "data:image/png;base64," + payload.screenshot_png_base64 }
+                : { path: payload.screenshot_path }),
+            }),
           });
         } else {
           items.push({ ok: false, label: "Screenshot — missing" });

@@ -6,7 +6,7 @@ import re
 def quote_id(value):
     """Validate a Salesforce quote name before it is used in SOQL."""
     value = (value or "").strip()
-    if not re.fullmatch(r"[A-Za-z]+-\d+", value):
+    if not re.fullmatch(r"[A-Za-z]+-[0-9]+", value):
         raise ValueError("Quote ID must look like Q-12345.")
     return value
 
