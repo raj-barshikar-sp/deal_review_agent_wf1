@@ -46,10 +46,12 @@ def _note_token(token, expires_at, instance_url=""):
 
 
 def _client():
-    client_id = os.environ.get("SALESFORCE_CLIENT_ID", "").strip()
-    client_secret = os.environ.get("SALESFORCE_CLIENT_SECRET", "").strip()
+    client_id = (os.environ.get("SF_PROD_ID") or os.environ.get("SALESFORCE_CLIENT_ID", "")).strip()
+    client_secret = (
+        os.environ.get("SF_PROD_SECRET") or os.environ.get("SALESFORCE_CLIENT_SECRET", "")
+    ).strip()
     if not client_id or not client_secret:
-        raise RuntimeError("Set SALESFORCE_CLIENT_ID and SALESFORCE_CLIENT_SECRET in .env")
+        raise RuntimeError("Set SF_PROD_ID and SF_PROD_SECRET in .env")
     return client_id, client_secret
 
 

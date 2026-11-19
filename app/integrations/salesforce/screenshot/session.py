@@ -51,21 +51,19 @@ def _private_key():
 def _screenshot_login():
     """My Domain, consumer key, integration username, and the JWT private key."""
     load_env()
-    domain = (
-        os.environ.get("SALESFORCE_MY_DOMAIN_URL", "").strip()
-        or os.environ.get("SALESFORCE_INSTANCE_URL", "").strip()
-    ).rstrip("/")
+    domain = os.environ.get("SALESFORCE_INSTANCE_URL", "").strip().rstrip("/")
     client_id = (
-        os.environ.get("SALESFORCE_JWT_CLIENT_ID", "").strip()
+        os.environ.get("SF_PROD_ID", "").strip()
+        or os.environ.get("SALESFORCE_JWT_CLIENT_ID", "").strip()
         or os.environ.get("SALESFORCE_CLIENT_ID", "").strip()
     )
     username = os.environ.get("SALESFORCE_USERNAME", "").strip()
     key = _private_key()
     missing = []
     if not domain.startswith("https://"):
-        missing.append("SALESFORCE_MY_DOMAIN_URL or SALESFORCE_INSTANCE_URL")
+        missing.append("SALESFORCE_INSTANCE_URL")
     if not client_id:
-        missing.append("SALESFORCE_JWT_CLIENT_ID or SALESFORCE_CLIENT_ID")
+        missing.append("SF_PROD_ID")
     if not username:
         missing.append("SALESFORCE_USERNAME")
     if not key:
