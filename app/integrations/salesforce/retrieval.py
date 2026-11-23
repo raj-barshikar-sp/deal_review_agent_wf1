@@ -5,6 +5,7 @@ import asyncio
 from app.config import DOWNLOAD_DIR
 from app.core.env import load_env
 
+from .auth import pdf_access_token  # TEMPORARY: SALESFORCE_CLIENT_ID/SECRET for PDF retrieval
 from .client import download_version, log, rest_query
 from .constants import DOCUMENT_KINDS
 from .documents import (
@@ -28,7 +29,7 @@ async def retrieve_documents(quote, verbose=False):
         "quote_number": quote,
         "documents": {kind: {"status": "missing"} for kind in DOCUMENT_KINDS},
     }
-    quotes = await asyncio.to_thread(rest_query, quote_query(quote), verbose)
+    quotes = await asyncio.to_thread(rest_query, quote_query(quote), verbose, pdf_access_token)
     if not quotes:
         report["error_message"] = f"Quote {quote} was not found."
         log(verbose, report["error_message"])
@@ -43,14 +44,14 @@ async def retrieve_documents(quote, verbose=False):
         report["error_message"] = "Salesforce quote record has no Id."
         log(verbose, report["error_message"])
         return report
-    quote_links = await asyncio.to_thread(rest_query, content_links_query(quote_record_id), verbose)
+    quote_links = await asyncio.to_thread(rest_query, content_links_query(quote_record_id), verbose, pdf_access_token)
     for record in quote_links:
         document = link_document(record)
         kinds = matching_kinds(document["title"])
         log(verbose, f"File {document['title']!r} -> {', '.join(kinds) or 'ignored'}")
     candidates = choose_documents(quote_links)
     if account_id:
-        agreements = await asyncio.to_thread(rest_query, agreements_query(account_id), verbose)
+        agreements = await asyncio.to_thread(rest_query, agreements_query(account_id), verbose, pdf_access_token)
         for agreement in agreements:
             agreement_id = str(agreement.get("Id") or agreement.get("id") or "")
             agreement_name = str(agreement.get("Name") or "")
@@ -58,7 +59,7 @@ async def retrieve_documents(quote, verbose=False):
                 log(verbose, f"Agreement skipped {agreement_name}")
                 continue
             log(verbose, f"Agreement {agreement_name}")
-            linked = await asyncio.to_thread(rest_query, content_links_query(agreement_id), verbose)
+            linked = await asyncio.to_thread(rest_query, content_links_query(agreement_id), verbose, pdf_access_token)
             for record in linked:
                 document = link_document(record)
                 if document["version_id"] and document["extension"].lower() == "pdf":
@@ -101,7 +102,7 @@ async def retrieve_documents(quote, verbose=False):
         seen_versions.add(document["version_id"])
         unique.append(document)
     downloads = await asyncio.gather(
-        *(asyncio.to_thread(download_version, document["version_id"], verbose) for document in unique),
+        *(asyncio.to_thread(download_version, document["version_id"], verbose, pdf_access_token) for document in unique),
         return_exceptions=True,
     )
     by_version = {

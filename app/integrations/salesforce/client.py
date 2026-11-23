@@ -15,14 +15,14 @@ def log(verbose, message):
         logger.debug(clean(message, 1000))
 
 
-def get(url, verbose=False, retried=False):
-    token = access_token()
+def get(url, verbose=False, retried=False, token_fn=access_token):
+    token = token_fn()
     log(verbose, "GET " + url)
     request = urllib.request.Request(url, headers={"Authorization": "Bearer " + token})
     raw, status, content_type = read_response(request)
     if status == 401 and not retried:
-        access_token(force=True)
-        return get(url, verbose=verbose, retried=True)
+        token_fn(force=True)
+        return get(url, verbose=verbose, retried=True, token_fn=token_fn)
     if status >= 400:
         detail = raw.decode(errors="replace")
         log(verbose, f"  HTTP {status} {detail}")
@@ -32,13 +32,13 @@ def get(url, verbose=False, retried=False):
     return raw, content_type
 
 
-def rest_query(query, verbose=False):
+def rest_query(query, verbose=False, token_fn=access_token):
     """Run SOQL through /services/data/query and follow nextRecordsUrl."""
     url = instance_url() + "/services/data/" + api_version() + "/query?q=" + urllib.parse.quote(query)
     log(verbose, "SOQL " + query)
     records = []
     while url:
-        raw, _content_type = get(url, verbose)
+        raw, _content_type = get(url, verbose, token_fn=token_fn)
         body = json.loads(raw.decode())
         log(verbose, f"  {len(body.get('records') or []) if isinstance(body, dict) else 0} records")
         if isinstance(body, list):
@@ -55,7 +55,7 @@ def rest_query(query, verbose=False):
     return records
 
 
-def download_version(version_id, verbose=False):
+def download_version(version_id, verbose=False, token_fn=access_token):
     url = (
         instance_url()
         + "/services/data/"
@@ -64,7 +64,7 @@ def download_version(version_id, verbose=False):
         + urllib.parse.quote(version_id, safe="")
         + "/VersionData"
     )
-    data, content_type = get(url, verbose)
+    data, content_type = get(url, verbose, token_fn=token_fn)
     if not data.startswith(b"%PDF"):
         raise RuntimeError(f"ContentVersion {version_id} is not a PDF ({content_type}).")
     return data

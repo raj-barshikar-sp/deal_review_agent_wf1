@@ -1,5 +1,5 @@
 .env
-certs/*.key
+certs/
 downloaded_docs/
 screenshots/
 cookie.json

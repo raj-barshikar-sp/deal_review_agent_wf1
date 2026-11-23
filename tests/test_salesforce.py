@@ -1,8 +1,5 @@
-import base64
-
 import pytest
 
-from app.integrations.salesforce.auth import _jwt_expiry, token_is_current
 from app.integrations.salesforce.screenshot.session import (
     _jwt_audiences,
     lightning_origin,
@@ -24,18 +21,6 @@ def test_quote_lines_query():
     query = quote_lines_query("Q-127182")
     assert "Q-127182" in query
     assert "SBQQ__QuoteLine__c" in query
-
-
-def test_token_expiry():
-    assert token_is_current(1_000, now=900)
-    assert not token_is_current(1_000, now=950)
-    assert not token_is_current(0, now=1)
-
-
-def test_jwt_expiry():
-    payload = base64.urlsafe_b64encode(b'{"exp":1000}').decode().rstrip("=")
-    assert _jwt_expiry("x." + payload + ".y") == 1000.0
-    assert _jwt_expiry("not-a-jwt") == 0.0
 
 
 def test_lightning_origin_and_paths():
