@@ -54,3 +54,4 @@ class QuoteLinesResult(BaseModel):
     # PNG inline: Cloud Run may serve the next request from another instance.
     screenshot_png_base64: str = ""
     page_url: str
+    drs: dict = {}

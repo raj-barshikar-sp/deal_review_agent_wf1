@@ -40,6 +40,7 @@ async def retrieve_documents(quote, verbose=False):
         return report
     quote_record_id = str(quotes[0].get("Id") or quotes[0].get("id") or "")
     account_id = str(quotes[0].get("SBQQ__Account__c") or "")
+    report["account_name"] = str((quotes[0].get("SBQQ__Account__r") or {}).get("Name") or "")
     if not quote_record_id:
         report["error_message"] = "Salesforce quote record has no Id."
         log(verbose, report["error_message"])

@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from app.core.limits import RateLimit
 from app.core.log import clean, logger, public_error
-from app.integrations import asana
+from app.integrations import asana, sharepoint
 from app.integrations.salesforce import DOCUMENT_KINDS, retrieve_documents
 from app.schemas import CreatedPurchaseTask, Email
 from app.services.purchase import extract_purchase
@@ -49,6 +49,7 @@ async def purchase_acknowledge(email: Email) -> CreatedPurchaseTask:
             "purchase-acknowledge %s documents=%s %s %s",
             task.quote_number, documents.get("status"), parts, clean(error),
         )
+    documents["sharepoint"] = await _upload(documents)
     if isinstance(created, Exception):
         status = created.status if isinstance(created, asana.AsanaError) else 502
         raise HTTPException(
@@ -61,3 +62,18 @@ async def purchase_acknowledge(email: Email) -> CreatedPurchaseTask:
         asana_url=created.url,
         documents=documents,
     )
+
+
+async def _upload(documents: dict) -> dict:
+    """Copy the downloaded PDFs to SharePoint. Never fails the request: report the outcome."""
+    files = documents.get("files") or []
+    customer = documents.get("account_name") or ""
+    if not sharepoint.configured():
+        return {"status": "skipped", "reason": "SharePoint is not configured"}
+    if not files or not customer:
+        return {"status": "skipped", "reason": "no files or no account name"}
+    try:
+        result = await asyncio.to_thread(sharepoint.upload_deal_documents, customer, files)
+    except Exception as exc:  # noqa: BLE001 - report, don't lose the Asana task
+        return {"status": "error", "error_message": public_error(exc, "SharePoint upload failed")}
+    return {"status": "uploaded", **result}

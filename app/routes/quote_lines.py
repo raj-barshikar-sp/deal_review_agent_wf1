@@ -8,10 +8,12 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from app.core.limits import RateLimit
 from app.core.log import public_error
+from app.integrations import sharepoint
 from app.integrations.salesforce import fetch_quote_lines
 from app.integrations.salesforce.screenshot import capture
 from app.integrations.salesforce.screenshot.remote import capture_remote, remote_url
 from app.schemas import Quote, QuoteLinesResult
+from app.services import drs
 
 router = APIRouter()
 limit = RateLimit("quote_lines", 6)
@@ -47,12 +49,26 @@ def quote_lines_drs(quote: Quote) -> QuoteLinesResult:
     finally:
         if not remote_url():
             _browser_lock.release()
+    png = Path(shot["path"]).read_bytes()
     return QuoteLinesResult(
         quote_number=quote.quote_number,
         record_count=len(records),
         records=records,
         screenshot_taken_at=shot["taken_at"],
         screenshot_path=shot["path"],
-        screenshot_png_base64=base64.b64encode(Path(shot["path"]).read_bytes()).decode(),
+        screenshot_png_base64=base64.b64encode(png).decode(),
         page_url=shot["page_url"],
+        drs=_publish_drs(records, png, shot["page_url"]),
     )
+
+
+def _publish_drs(records: list, png: bytes, report_url: str) -> dict:
+    """Create or update the DRS in SharePoint. Never fails the request: report the outcome."""
+    if not sharepoint.configured():
+        return {"status": "skipped", "reason": "SharePoint is not configured"}
+    if not records:
+        return {"status": "skipped", "reason": "quote has no lines"}
+    try:
+        return drs.publish(records, png, report_url)
+    except Exception as exc:  # noqa: BLE001 - the lines and screenshot are still returned
+        return {"status": "error", "error_message": public_error(exc, "DRS update failed")}

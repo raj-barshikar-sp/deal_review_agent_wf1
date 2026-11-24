@@ -3,3 +3,4 @@ uvicorn
 selenium
 pillow
 PyJWT[crypto]
+openpyxl

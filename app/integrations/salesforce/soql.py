@@ -17,7 +17,7 @@ def soql_literal(value):
 
 def quote_query(quote):
     return (
-        "SELECT Id, SBQQ__Account__c FROM SBQQ__Quote__c "
+        "SELECT Id, SBQQ__Account__c, SBQQ__Account__r.Name FROM SBQQ__Quote__c "
         "WHERE Name = " + soql_literal(quote_id(quote))
     )
 
@@ -39,7 +39,7 @@ def content_links_query(entity_id):
 
 def quote_lines_query(quote):
     return (
-        "SELECT Id, SBQQ__Quote__r.Name, Name, SBQQ__ProductCode__c, "
+        "SELECT Id, SBQQ__Quote__r.Name, SBQQ__Quote__r.SBQQ__Account__r.Name, Name, SBQQ__ProductCode__c, "
         "SBQQ__ProductName__c, SBQQ__ProductFamily__c, SBQQ__Quantity__c, "
         "SBQQ__EffectiveStartDate__c, SBQQ__EffectiveEndDate__c, "
         "CurrencyIsoCode, SBQQ__ProratedListPrice__c, "

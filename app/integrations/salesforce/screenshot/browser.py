@@ -13,6 +13,8 @@ from selenium.webdriver.support.ui import WebDriverWait
 from .page_scripts import (
     DISMISS_POPUPS_JS,
     REPORT_BOTTOM_JS,
+    REPORT_COLUMNS_JS,
+    REPORT_OVERFLOW_JS,
     REPORT_READY_JS,
     REPORT_TOTAL_JS,
 )
@@ -71,6 +73,38 @@ def _run_in_report_frame(driver, js):
     return None, 0
 
 
+EXPECTED_COLUMNS = 16  # NDT - Quote Lines report, Quote Number through Currency
+
+
+def _require_columns(driver, max_width=6000):
+    """Widen the window until every report column is on screen; fail rather than save a cropped shot."""
+    seen = {}
+    for _ in range(6):
+        seen = _run_in_report_frame(driver, REPORT_COLUMNS_JS)[0] or {}
+        if seen.get("total", 0) >= EXPECTED_COLUMNS and seen.get("visible", 0) >= seen["total"]:
+            return seen["total"]
+        size = driver.get_window_size()
+        if size["width"] >= max_width:
+            break
+        driver.set_window_size(min(size["width"] + 300, max_width), size["height"])
+        time.sleep(2)
+    raise RuntimeError(
+        f"Only {seen.get('visible', 0)} of {seen.get('total', 0)} report columns visible "
+        f"(expected {EXPECTED_COLUMNS}); not saving a cropped screenshot."
+    )
+
+
+def _fit_width(driver, max_width=6000):
+    """Widen the window until no report column or the filter panel is cut off on the right."""
+    for _ in range(4):
+        overflow = _run_in_report_frame(driver, REPORT_OVERFLOW_JS)[0] or 0
+        size = driver.get_window_size()
+        if overflow <= 2 or size["width"] >= max_width:
+            return
+        driver.set_window_size(min(size["width"] + int(overflow) + 40, max_width), size["height"])
+        time.sleep(2)
+
+
 def wait_for_report(driver):
     """Wait until the Total Records tile exists and the table has stopped moving, then trim the window."""
     try:
@@ -100,4 +134,6 @@ def wait_for_report(driver):
         time.sleep(1)
     except Exception:
         pass
+    _fit_width(driver)
+    _require_columns(driver)
     return rows
