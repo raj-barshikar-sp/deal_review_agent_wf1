@@ -1,0 +1,39 @@
+flowchart TD
+    A["Cloud Tasks delivers<br/>POST /internal/advance {event}"] --> B["Find Asana task by Quote Number<br/>match any quote in the slash-separated field<br/>include completed tasks"]
+    B --> C{"Task found?"}
+
+    C -->|"no, PA email event"| D["Create the task<br/>populate only empty fields"]
+    C -->|"no, any other event"| E["Quote unknown: log error,<br/>raise alert, return 200"]
+    C -->|yes| J
+    D --> J["Derive missing work from evidence<br/>Asana fields + Agent stages field<br/>+ SharePoint folder contents"]
+
+    J --> K{"Signed quote not yet in SharePoint?<br/>BLOCKS amendment only"}
+    K -->|yes| K1["Download from Salesforce, upload.<br/>If it is not attached, this stage fails"]
+    K -->|no| L
+
+    K1 --> L{"TAF, PO or master agreement<br/>missing?<br/>BLOCKS NOTHING"}
+    L -->|yes| L1["Upload what exists, flag pack_partial<br/>on the Asana task, then carry on"]
+    L -->|no| M
+    L1 --> M
+
+    M{"SO exists in NetSuite but<br/>Asana fields empty?"}
+    M -->|yes| M1["Populate only the empty fields"]
+    M -->|no| N
+    M1 --> N
+
+    N{"RA exists but<br/>RA number not written?"}
+    N -->|yes| N1["Write RA number"]
+    N -->|no| O
+    N1 --> O
+
+    O{"TCV >= 250k and RA present<br/>and workbook not done?"}
+    O -->|yes| O1["Build DRS workbook, upload to SharePoint"]
+    O -->|no| P
+    O1 --> P
+
+    P["Write results to the Agent stages field<br/>one log line per external write"]
+    P --> Q{"Did any stage fail?"}
+    Q -->|no| R["Return 200<br/>queue removes the task"]
+    Q -->|yes| S{"Last attempt?<br/>X-CloudTasks-TaskRetryCount"}
+    S -->|no| S1["Return 5xx<br/>Cloud Tasks retries with backoff,<br/>only the failed stage is redone"]
+    S -->|yes| S2["Set needs_human, comment on the task<br/>naming what is missing,<br/>raise alert, return 200 to stop retrying"]

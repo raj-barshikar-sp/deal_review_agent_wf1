@@ -1,65 +1,71 @@
 sequenceDiagram
     autonumber
-    participant SCH as Cloud Scheduler
+    participant PA as Power Automate<br/>(or Graph poll)
+    participant GW as API Gateway
     participant SVC as Cloud Run<br/>new-deal-review-agent
-    participant FS as Firestore
-    participant TQ as Cloud Tasks
-    participant GR as MS Graph<br/>(mailbox)
-    participant GEM as Gemini<br/>(ADK agent)
+    participant TQ as Cloud Tasks<br/>ndra-advance
     participant AS as Asana
     participant SF as Salesforce
     participant SP as SharePoint
 
-    Note over SCH,SP: Workflow 1 - Purchase Acknowledgement email to populated task + document pack
+    Note over PA,SP: Workflow 1 - Purchase Acknowledgement email to populated task + document pack
 
-    SCH->>SVC: POST /jobs/poll (OIDC)
-    SVC->>GR: delta query on shared mailbox since watermark
-    GR-->>SVC: new messages
-    SVC->>SVC: filter PA emails by subject/sender rule
-    SVC->>FS: dedupe on internetMessageId
-    FS-->>SVC: not seen before
+    PA->>GW: POST /events/mail (x-api-key, HMAC headers)
+    GW->>SVC: forward with OIDC token
+    SVC->>SVC: verify HMAC + timestamp, filter by sender and subject,<br/>read quote number from the email
 
-    SVC->>GEM: extract name, description, delivery date,<br/>period (MMM YYYY), quote number
-    GEM-->>SVC: structured PA fields + confidence
-
-    alt confidence below threshold
-        SVC->>FS: stage = needs_human, reason recorded
-        SVC->>AS: comment on tracker for analyst review
-    else confident
-        SVC->>FS: create deal case keyed on quote number
-        SVC->>AS: upsert task in FY'27 Deal Review Tracker<br/>(write only empty fields)
-        AS-->>SVC: task gid
-        SVC->>FS: stage task_created = done, evidence = task gid
+    alt no quote number found
+        SVC-->>PA: 422, log error, alert (no task exists to flag)
+    else quote number found
+        SVC->>TQ: enqueue task, name derived from the Outlook message id
+        SVC-->>PA: 202 Accepted (fast, no stage work done here)
     end
 
-    SVC->>TQ: enqueue advance(case_id), dedupe key = quote number
-    TQ->>SVC: POST /internal/advance
+    Note right of PA: Graph polling alternative: Cloud Scheduler calls /jobs/poll,<br/>which re-reads recent mail and enqueues the same way
+
+    TQ->>SVC: POST /internal/advance (OIDC)
+
+    SVC->>AS: find task by Quote Number (include completed tasks)
+    alt task already exists
+        AS-->>SVC: task gid, fields, Agent stages
+        Note right of SVC: repeat delivery: skip every stage whose<br/>evidence is already present
+    else no task yet
+        SVC->>SF: SOQL on the quote - account, description, dates
+        SF-->>SVC: quote fields
+        SVC->>AS: create task in the Deal Review Tracker<br/>(resolve annual project, write only empty fields)
+        AS-->>SVC: task gid
+        SVC->>AS: Agent stages = task_created
+    end
 
     Note over SVC,SP: Track A - signed quote only, this is the critical path
 
-    SVC->>SF: query Quote by quote number, list attached files
-    SF-->>SVC: ContentVersion list + agreements
-    SVC->>GEM: which file is the executed (signed) quote?
-    GEM-->>SVC: signed quote content id + confidence
+    SVC->>SF: list files attached to the quote and agreements
+    SF-->>SVC: ContentVersion list
+    SVC->>SVC: pick the executed (signed) quote by object and title
     SVC->>SF: download signed quote PDF
     SVC->>SP: ensure path customer / New Deals / <month>, upload
-    SVC->>FS: signed_quote_in = done, store content hash
+    SVC->>AS: Agent stages += signed_quote_in
 
     Note right of SVC: amendment analysis can start NOW.<br/>It needs nothing else from the pack.
 
     Note over SVC,SP: Track B - rest of the pack, best effort, never blocks
 
-    SVC->>GEM: classify remaining files - TAF / PO /<br/>master agreement (EULA, End User, SLA, SaaS)
-    GEM-->>SVC: labels + confidence
+    SVC->>SVC: classify remaining files - TAF / PO / master agreement<br/>(object and title match first)
     SVC->>SF: download matched files
     Note right of SF: all documents are attached at<br/>Closed/Won, so this is normally<br/>a single pass, not a chase
     SVC->>SP: upload (skip files already present)
     SP-->>SVC: item ids
-    SVC->>FS: record per-document evidence
 
     alt pack complete
-        SVC->>FS: pack_complete
+        SVC->>AS: Agent stages += pack_complete
     else something missing
-        SVC->>FS: pack_partial, note which documents are missing
-        Note right of FS: reconciler retries only the missing items.<br/>Enrichment and the DRS proceed regardless.
+        SVC->>AS: Agent stages += pack_partial, comment naming the missing documents
+        Note right of AS: enrichment and the DRS proceed regardless
+    end
+
+    alt any stage failed
+        SVC-->>TQ: 5xx, Cloud Tasks retries with backoff, redoing only that stage
+        Note right of TQ: on the last attempt the handler sets needs_human,<br/>comments on the task, alerts, and returns 200
+    else all stages done
+        SVC-->>TQ: 200, task removed from the queue
     end

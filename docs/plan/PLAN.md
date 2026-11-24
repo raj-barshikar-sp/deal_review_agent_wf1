@@ -16,7 +16,7 @@ Two business workflows:
 1. **Purchase Acknowledgement email arrives** — create and populate a task in the Deal Review Tracker in Asana, then collect the document pack (signed quote, TAF, PO, master agreement) into SharePoint under `customer / New Deals / <month>`.
 2. **NetSuite sales order is created** — match it to the task by quote number, enrich TCV, customer size, SO/RMA and project codes, analyse the executed: quote for amendment language, and once the Revenue Arrangement exists and TCV is at least $250,000 USD, build and upload the Deal Review Sheet workbook.
 
-The decisive design point is that **this is not a conversational agent**. Nobody prompts it. It is triggered by events and does its work inline when each event arrives. State lives in Asana, so there is no database, queue, or scheduled sweep in the first release. A scheduled catch-up sweep is deferred to UAT (section 5). That shape is what drives the runtime recommendation below.
+The decisive design point is that **this is not a conversational agent**. Nobody prompts it. It is triggered by events. Each webhook is acknowledged quickly and the work runs from a Cloud Tasks queue. State lives in Asana, so there is no database. A scheduled catch-up sweep is deferred to UAT (section 5). That shape is what drives the runtime recommendation below.
 
 ### Constraints from the source ticket
 i
@@ -93,11 +93,12 @@ Every other agent in this repo deploys to Vertex AI Agent Engine, which is the r
 |---|---|---|
 | Receive webhooks from NetSuite SuiteScript and Power Automate (or Microsoft Graph polling) | No HTTP ingress you control | Native, plus API Gateway in front |
 | Durable state across days | Session state is per-conversation | Not needed from the platform: state lives in Asana (section 4) |
+| Acknowledge a webhook quickly, then retry failed work with backoff | Not available | Cloud Tasks queue (section 5) |
 | Scheduled catch-up work | No scheduler concept | Cloud Scheduler is available when we add the sweep (section 5, deferred to UAT) |
 
-There is no database and no queue. Each trigger is processed inline, and nothing in the service creates or depends on a conversation session.
+There is no database. The one piece of added infrastructure is a Cloud Tasks queue, which lets a webhook return at once and gives failed work automatic retries. Nothing in the service creates or depends on a conversation session.
 
-The repo already has a Cloud Run path: `a2a_apps/rag_agent_product` deploys through `cicd_scripts/deploy_a2a.sh` with `gcloud run deploy --source .` and buildpacks, service account read from `.agent_engine_config.json`, and `--no-allow-unauthenticated`. We reuse it with **one pipeline change**: a per-app OpenAPI spec (section 9), because the shared `cicd_scripts/openapi.yaml.tpl` only exposes A2A paths and would not route `/events/*` through API Gateway. No Dockerfile is needed.
+The repo already has a Cloud Run path: `a2a_apps/rag_agent_product` deploys through `cicd_scripts/deploy_a2a.sh` with `gcloud run deploy --source .` and buildpacks, service account read from `.agent_engine_config.json`, and `--no-allow-unauthenticated`. We reuse it with **two additive pipeline changes** (section 9): a per-app OpenAPI spec, because the shared `cicd_scripts/openapi.yaml.tpl` only exposes A2A paths and would not route `/events/*` through API Gateway, and creation of the Cloud Tasks queue. No Dockerfile is needed.
 
 CI only reacts to edits under `agents/`, and `deploy_a2a.sh` reads the service account from `agents/<name>/.agent_engine_config.json`. So `agents/new_deal_review_agent/` must exist. In the first release it is a **stub**: a minimal `root_agent`, `requirements.txt`, and `.agent_engine_config.json`. The Cloud Run app does not import it, so no ADK session is ever created. If a model-backed stage is added later (section 3), it lives in that folder. Whether any LLM stage is needed at all is an open decision (section 15).
 
@@ -122,8 +123,9 @@ Everything else — Asana field writes, SharePoint folder creation, NetSuite que
 
 ### Components
 
-- **FastAPI ingress** (`a2a_apps/new_deal_review_agent/app.py`): `/events/mail`, `/events/netsuite`, `/healthz`, `/deals/{quote_number}` (reads the stage ledger from Asana). `/jobs/poll` exists only if Graph mail polling is chosen over Power Automate (section 7a); Cloud Scheduler would call it. There is no `/jobs/reconcile` and no `/internal/advance` in the first release.
-- **Orchestrator**: handles one event inline. It finds the Asana task by quote number, builds the case view from Asana and SharePoint, and runs the stages whose evidence is missing. There is no queue and no background work.
+- **FastAPI ingress** (`a2a_apps/new_deal_review_agent/app.py`): `/events/mail`, `/events/netsuite`, `/internal/advance`, `/healthz`, `/deals/{quote_number}` (reads the stage ledger from Asana). `/events/*` verify the request, enqueue one task and return `202`. `/internal/advance` does the work and is called only by Cloud Tasks; it is not exposed through API Gateway. `/jobs/poll` exists only if Graph mail polling is chosen over Power Automate (section 7a); Cloud Scheduler would call it. There is no `/jobs/reconcile` in the first release.
+- **Queue**: a Cloud Tasks queue, `ndra-advance`, with one task per event. It gives the fast acknowledgement, retries with backoff, and strictly serial execution (`max_concurrent_dispatches: 1`). See section 5.
+- **Orchestrator**: handles one queued event. It finds the Asana task by quote number, builds the case view from Asana and SharePoint, and runs the stages whose evidence is missing.
 - **Stage handlers**: one module per stage, each with `is_satisfied(case)` and `execute(case)`. Both are idempotent and safe to re-run, which is what makes a retried trigger harmless.
 - **Connector layer**: one adapter per system of record, handling retries, backoff, rate limits, and an audit log line per external write.
 - **State: Asana only.** There is no database. The Asana task, keyed by a Quote Number custom field, is the case record. Stage evidence comes from Asana fields plus SharePoint contents. See section 4.
@@ -174,7 +176,7 @@ There is no app-owned database. The Asana task is the case record, and stage sta
 
 Consequences to accept knowingly:
 
-- **Duplicate tasks.** Asana has no atomic create-if-absent. Two simultaneous triggers for the same quote could both find nothing and both create a task. The service is therefore deployed with **`max_instances: 1`** and a lock around the lookup-and-create, so triggers are processed one at a time. At tens of deals this is ample. Two revisions briefly overlap during a deploy, which leaves a very small residual risk.
+- **Duplicate tasks.** Asana has no atomic create-if-absent. Two simultaneous triggers for the same quote could both find nothing and both create a task. The queue prevents this: `max_concurrent_dispatches: 1` means events are processed strictly one at a time, so the lookup-and-create never races with itself. At tens of deals a day this is ample. A slow case delays the ones behind it, which is acceptable at this volume.
 - **Failures before a task exists.** If the quote number cannot be extracted, there is no task to carry `needs_human`. The service logs an error, and a log-based alert fires.
 - **A missed trigger is not caught automatically** in the first release. See section 5.
 - **Required Asana setup.** A Quote Number field, an Agent stages field, and a `needs_human` marker must exist on the Deal Review Tracker project. An Asana admin has to add them. See open question 19.
@@ -195,24 +197,37 @@ Writes to Asana are **field-level upserts that only populate empty fields**, mat
 
 ![Workflow 2 sequence](diagrams/diagrams/04-sequence-workflow2.png)
 
-### Triggers, retries and what happens on failure
+### Triggers, queue, retries and what happens on failure
 
-Each trigger is handled **inline**: the request finds or creates the Asana task, runs the stages whose evidence is missing, and returns. There is no queue, no background worker, and no scheduled sweep in the first release.
+The work is time-consuming, so a webhook never does it. The webhook acknowledges and the queue delivers.
+
+```
+Power Automate / SuiteScript -> API Gateway -> /events/*
+    verify HMAC, extract the quote number, enqueue one task, return 202
+Cloud Tasks (OIDC) -> Cloud Run /internal/advance
+    find or create the Asana task, run the stages whose evidence is missing
+```
+
+![Advance handler](diagrams/diagrams/05-advance-handler.png)
 
 - **Workflow 1** is triggered by the PA email, through a Power Automate flow or Graph polling (section 7a). Every document is attached at Closed/Won, so the work is one pass: create and populate the task, then copy the pack to SharePoint.
 - **Workflow 2** is triggered by NetSuite SuiteScript events (section 7a).
-- **Failures return an error to the caller.** A 5xx makes Power Automate or the SuiteScript retry, and idempotent handlers make the retry safe. A stage that fails after the task exists leaves its evidence unset, so the next trigger redoes only that stage. A stage that cannot succeed (for example a missing document) sets `needs_human` and comments on the task.
-- **Request time.** The work must fit inside the gateway deadline, the Cloud Run request timeout, and Power Automate's HTTP action timeout (about two minutes for a synchronous call; confirm with IT). Workflow 1 is a handful of Salesforce, Asana and SharePoint calls and should fit. If a stage outgrows that, return `202` and move the work to a background mechanism such as Cloud Tasks. That is a later change, not a first-release component.
+- **Fast acknowledgement.** `/events/*` does only cheap work: verify the signature, read the quote number, enqueue, return `202`. If enqueueing fails it returns a `5xx`, so the caller retries. If no quote number can be extracted there is no task to flag, so it logs an error that fires an alert and rejects the request.
+- **Task naming is per event, not per quote.** The task name is derived from the Outlook message id for mail, and from the record id plus event type for NetSuite. Cloud Tasks rejects a duplicate name for a period, which gives a first layer of dedupe. It is not keyed on the quote number, because a quote legitimately has several events (PA email, SO created, RA ready). The permanent dedupe is still the Asana lookup.
+- **Retries replace the sweep for transient failures.** `/internal/advance` returns a `5xx` on failure and Cloud Tasks retries with exponential backoff. A stage that fails after the task exists leaves its evidence unset, so the retry redoes only that stage. Start with about 8 attempts and a backoff from 30 seconds to 15 minutes, and tune from UAT.
+- **Final failure is never silent.** Cloud Tasks has no dead-letter queue. The handler reads the `X-CloudTasks-TaskRetryCount` header, and on the last attempt it sets `needs_human`, comments on the Asana task naming exactly what is missing, logs an error that fires an alert, and returns `200` to stop retrying. A stage that cannot succeed at all (for example a missing document) does the same immediately.
+- **Timeouts.** Set the Cloud Tasks dispatch deadline at or above the Cloud Run request timeout, so a task is never retried while its first attempt is still running. The gateway deadline only needs to cover the enqueue, which is fast.
+- **Concurrency.** The queue runs one task at a time across all deals. Cloud Run can keep a small `max_instances` for the quick `/events/*` calls.
 
 ### Deferred: the catch-up sweep
 
 A scheduled sweep that re-checks open tasks and finishes whatever is outstanding is **intentionally not built now**. Salesforce attaches every document before the PA email is sent, and each event carries what the stage needs, so the sweep is only a safety net for missed triggers. It is added during UAT if monitoring shows triggers being missed.
 
-When it is added, it needs only Cloud Scheduler calling one endpoint with an OIDC token. The endpoint lists incomplete Asana tasks (`completed_since=now`) and runs the same stage handlers over them within a time budget, stopping when the budget runs out so the next run resumes. No database or queue is required, because stage status is derived from Asana and SharePoint each time.
+When it is added, it needs only Cloud Scheduler calling one endpoint with an OIDC token. The endpoint lists incomplete Asana tasks (`completed_since=now`) and enqueues one task per open case onto the same `ndra-advance` queue, so the sweep does no work itself and never exceeds a request timeout. No database is required, because stage status is derived from Asana and SharePoint each time.
 
 Until then, two things the sweep would have covered have no automatic catch-up:
 
-- **A missed or failed trigger.** Power Automate and the SuiteScript retry, and a handled event can be replayed by posting the same payload to `/events/mail` or `/events/netsuite`, but nothing detects a trigger that never fired.
+- **A missed trigger.** Power Automate and the SuiteScript retry if enqueueing fails, the queue retries failed work, and a handled event can be replayed by posting the same payload to `/events/mail` or `/events/netsuite`. Nothing detects a trigger that never fired.
 - **Waiting stages.** A deal waiting days for a Sales Order or Revenue Arrangement is moved forward by the NetSuite event, not by a poll. **This makes the Revenue Arrangement trigger a hard dependency: see section 7a and open question 18.**
 
 ---
@@ -305,9 +320,9 @@ Cloud Run then does four checks, in this order, and rejects with 401 on any fail
 1. Recompute the HMAC over the **raw** request body — not the parsed JSON, because re-serialising changes the bytes and breaks the signature.
 2. Compare using `hmac.compare_digest`, never `==`, so the comparison is constant-time.
 3. Reject if the timestamp is more than five minutes old. This is the replay guard; without it a captured request stays valid forever.
-4. Look up the quote number in Asana. If a task already exists, the handler skips every stage whose evidence is present, so a retried delivery does nothing it has already done. `X-NDRA-Event-Id` is logged on every line for tracing and is not stored.
+4. Enqueue a Cloud Task named from `X-NDRA-Event-Id`, so a retried delivery with the same id is rejected by the queue as a duplicate. Beyond the queue's dedupe window, the handler's Asana lookup makes a repeat harmless: it skips every stage whose evidence is present.
 
-The endpoint does the work inside the request and returns `200` when the stages finish, or a `5xx` on failure so the flow retries. Keep the gateway deadline and Cloud Run timeout under Power Automate's synchronous HTTP timeout (about two minutes; confirm with IT). If a stage outgrows that, switch to `202` with background work (section 5).
+The endpoint does no stage work inside the request. After the signature, timestamp and quote-number checks it enqueues a task and returns `202 Accepted`, so Power Automate always gets a fast response and never times out. If enqueueing fails it returns a `5xx` and the flow retries. The work, retries and final-failure handling are in section 5.
 
 Rotation is a two-step: add the new secret as a second accepted value, switch the flow over, then remove the old one. The verifier accepts either during the overlap.
 
@@ -365,7 +380,7 @@ agents/new_deal_review_agent/
   .agent_engine_config.json     # service account, also read by deploy_a2a.sh
   orchestrator/
     case.py                     # DealCase view built from the Asana task and SharePoint evidence
-    engine.py                   # compute missing stages and run them inline, under a lock
+    engine.py                   # compute missing stages and run them (called from /internal/advance)
   stages/
     task_created.py
     signed_quote.py             # track A, gates amendment and DRS
@@ -383,15 +398,16 @@ agents/new_deal_review_agent/
   ingress/
     hmac.py                     # shared-secret verification, replay guard
     normalise.py                # Power Automate and Graph to one payload shape
+    queue.py                    # enqueue Cloud Tasks, event-derived task names
   drs/
     builder.py                  # extract tabs, review tabs, highlighting
     naming.py                   # "DRS - M.DD.YYYY - Account (MM.YYYY)"
 
 a2a_apps/new_deal_review_agent/
-  app.py                        # FastAPI: /events/* webhooks, optional /jobs/poll for Graph mail polling
+  app.py                        # FastAPI: /events/* enqueue, /internal/advance does the work, optional /jobs/poll
   openapi.yaml.tpl              # per-app API Gateway spec: only /events/* behind the API key
   Procfile                      # web: uvicorn app:ndra_app --host 0.0.0.0 --port $PORT
-  config.json                   # min 0, max 1 (serialises task creation), 1 CPU, 2Gi, timeout under the Power Automate limit
+  config.json                   # min 0, small max_instances, 1 CPU, 2Gi, request timeout sized for a full case (queue concurrency enforces serial work)
   requirements.txt
 ```
 
@@ -405,22 +421,27 @@ Connectors start agent-local. Promote `netsuite.py`, `asana.py`, and `sharepoint
 
 Deployment uses the repo's existing flow with two small changes: push to `dev`, `test.yml` runs pytest, `deploy.yml` detects the changed `agents/` folder, and `deploy_a2a.sh` copies `agents/` and `tools/` into the app directory and runs `gcloud run deploy --source .`. Promotion is `dev → stg → uat → main(prod)` against `gemini-enterprise-dev-485017`, `gemini-enterprise-staging`, `gemini-enterprise-uat`, and `sailpoint-gemini-enterprise`.
 
-### Pipeline change: a per-app OpenAPI spec
+### Pipeline changes
 
-API Gateway is configured from an OpenAPI file that lists which paths exist. `cicd_scripts/setup_infrastructure.sh` always uses the shared `cicd_scripts/openapi.yaml.tpl`, which only defines the A2A paths (`/`, `/.well-known/agent-card.json`, `/.well-known/agent.json`). Routes such as `/events/mail` would not exist at the gateway.
+Two additive changes to the shared scripts. Other agents are unaffected by either.
 
-The change is additive: if `a2a_apps/<name>/openapi.yaml.tpl` exists, the script uses it, and otherwise it falls back to the shared template. Other agents are unaffected. Our spec exposes only `/events/mail` and `/events/netsuite`, each with `security: api_key_auth` and an `x-google-backend` entry pointing at the Cloud Run URL. `/healthz` and `/jobs/*` are not exposed publicly; Cloud Scheduler, if used, calls Cloud Run directly with OIDC. The script also writes `A2A_PUBLIC_URL` into the service, which is unused here and harmless.
+**1. A per-app OpenAPI spec.** API Gateway is configured from an OpenAPI file that lists which paths exist. `cicd_scripts/setup_infrastructure.sh` always uses the shared `cicd_scripts/openapi.yaml.tpl`, which only defines the A2A paths (`/`, `/.well-known/agent-card.json`, `/.well-known/agent.json`). Routes such as `/events/mail` would not exist at the gateway. If `a2a_apps/<name>/openapi.yaml.tpl` exists, the script uses it, and otherwise it falls back to the shared template. Our spec exposes only `/events/mail` and `/events/netsuite`, each with `security: api_key_auth` and an `x-google-backend` entry pointing at the Cloud Run URL. `/internal/advance`, `/healthz` and `/jobs/*` are not exposed publicly. Cloud Tasks and Cloud Scheduler call Cloud Run directly with OIDC. The script also writes `A2A_PUBLIC_URL` into the service, which is unused here and harmless.
+
+**2. Create the Cloud Tasks queue.** `setup_infrastructure.sh` enables the Cloud Tasks API and creates the queue if it does not exist, for services whose `config.json` declares one. The same step can be done once by hand per environment if the team prefers not to automate it.
 
 ### Infrastructure to provision
 
 New per-environment infrastructure, one-time and scripted:
 
+- Cloud Tasks queue `ndra-advance`, `max_concurrent_dispatches: 1`, with the retry settings from section 5
+- IAM: the service's runtime account needs `roles/cloudtasks.enqueuer` and `roles/iam.serviceAccountUser` on the invoker account. The invoker account that Cloud Tasks signs with needs `roles/run.invoker` on the service
+- Environment settings for the service: the queue name, the service URL and the invoker account
 - Secret Manager entries for the credential sets (Salesforce integration user, Asana, Microsoft Entra, NetSuite, and the Power Automate HMAC secret)
 - The Asana custom fields and `needs_human` marker on the Deal Review Tracker project (section 4)
 - A separate Asana test project and a test SharePoint folder for shadow mode
 - A Cloud Scheduler job calling `/jobs/poll`, only if Graph mail polling is chosen over Power Automate
 
-There is no Firestore database, no Cloud Tasks queue, and no GCS bucket.
+There is no Firestore database and no GCS bucket.
 
 ### Shadow mode
 
@@ -464,7 +485,7 @@ Every log line carries `quote_number`, `case_id`, `stage`, and `attempt`. Beyond
 
 **These thresholds need something that looks for stuck cases, so they are deferred together with the sweep (section 5).** With only event-driven processing, a deal that is waiting and never receives its next event raises no alert. The thresholds are kept here so they can be applied when the sweep is added in UAT. The alerts that work from day one are the ones raised by an event: a stage that fails, an extraction that finds no quote number, and a `needs_human` set by a handler.
 
-- No retry budget inside the service. A failed stage returns an error so the caller retries, and a stage that cannot succeed sets `needs_human`, comments on the Asana task naming exactly what is missing, and logs an error that fires an alert. The analyst is never left guessing.
+- Retries are handled by the Cloud Tasks queue (section 5). A failed stage returns an error and the queue retries it with backoff. On the last attempt, or for a stage that cannot succeed, the handler sets `needs_human`, comments on the Asana task naming exactly what is missing, and logs an error that fires an alert. The analyst is never left guessing
 - `GET /deals/{quote_number}` returns the stage ledger, built from the Asana task and SharePoint, for support.
 - A weekly digest of cases closed, cases blocked, and median time from PA email to `drs_done` — the number that proves the business case.
 
@@ -477,13 +498,13 @@ The agent never approves anything. The DRS is produced *ready for review*; a hum
 | Phase | Scope | Estimate |
 |---|---|---|
 | 0 | Access and credentials (Entra app, `Sites.Selected` grant, SF connected app, NetSuite integration user, Asana token), **confirm Power Automate premium licence and DLP policy**, **confirm the new Asana project naming convention and the new SharePoint parent folder**, sandbox provisioning, collect the PA email fixture corpus | 1 week |
-| 1 | Cloud Run skeleton with the per-app OpenAPI spec and the stub agent folder, Asana case lookup and idempotency (Quote Number field, lock, `max_instances: 1`), Graph mail polling or the Power Automate flow, PA email extraction, annual project resolution, `task_created` | 2 weeks |
+| 1 | Cloud Run skeleton with the per-app OpenAPI spec and the stub agent folder, Cloud Tasks queue and `/internal/advance` (fast acknowledgement, retries, serial execution), Asana case lookup and idempotency (Quote Number field), Graph mail polling or the Power Automate flow, PA email extraction, annual project resolution, `task_created` | 2 weeks |
 | 2 | Salesforce file retrieval, signed quote first (`signed_quote_in`), document classification, SharePoint pack keyed on customer unique id (`pack_in_progress`) | 2 weeks |
 | 3 | Amendment analysis off the signed quote, cancelled-quote subtask, NetSuite SO matching and enrichment, RA number, **NetSuite SuiteScript push for the SO and a trigger for the RA (open question 18)** — `amendment_checked`, `so_enriched`, `ra_ready` | 2 weeks |
 | 4 | DRS workbook: extract tabs, review tabs, highlighting, naming, upload — `drs_done`; plus the below-threshold path (`Review Signoff Threshold` and `Preparer Status` to `N/A`) | 2 weeks |
 | 5 | API Gateway with HMAC for Power Automate (if licensed), event-driven alerting, shadow-mode UAT against the test Asana project, **catch-up sweep if UAT shows missed triggers**, production cutover | 1.5 weeks |
 
-Roughly **10.5 weeks** end to end. These estimates were not revisited after removing the database, queue and sweep, and after moving the SuiteScript push into Phase 3. Phases 1 and 2 deliver standalone value — every PA email becoming a populated task with its document pack is most of the manual effort — so there is a credible early release at the end of Phase 2.
+Roughly **10.5 weeks** end to end. These estimates were not revisited after removing the database and the sweep (the queue stays), and after moving the SuiteScript push into Phase 3. Phases 1 and 2 deliver standalone value — every PA email becoming a populated task with its document pack is most of the manual effort — so there is a credible early release at the end of Phase 2.
 
 ---
 
@@ -501,9 +522,11 @@ Roughly **10.5 weeks** end to end. These estimates were not revisited after remo
 | RA waits are long and irregular, especially at month end | Noisy alerts, or real failures hidden among them | Per-stage thresholds in section 11; the RA wait is exempt from the generic stuck-case alert and suppressed in the last five days of a month |
 | Duplicate company names across concurrent deals | DRS filename collision in SharePoint | Largely resolved by ITFINSYS-673: customer folders are keyed on a unique identifier, not the display name. Interim rule for the filename itself is to append the SO number |
 | Non-USD orders | TCV threshold evaluated on the wrong number | Read the USD amount field explicitly; fail the case to `needs_human` if absent rather than converting |
-| Asana and Salesforce rate limits under backfill | Throttling, partial runs | Serial processing on a single instance, exponential backoff in the connectors, and idempotent handlers so a retried event is safe |
+| Asana and Salesforce rate limits under backfill | Throttling, partial runs | Queue concurrency of 1, exponential backoff in the queue and in the connectors, and idempotent handlers so a retried event is safe |
 | A missed trigger goes unnoticed, since there is no sweep | A deal is left incomplete with no alert | Power Automate and SuiteScript retries, idempotent handlers, event replay through `/events/*`, and the sweep added in UAT if monitoring shows misses |
-| Duplicate Asana tasks from concurrent triggers | Two tasks for one quote | `max_instances: 1`, a lock around lookup-and-create, and a lookup that includes completed tasks |
+| Duplicate Asana tasks from concurrent triggers | Two tasks for one quote | Queue `max_concurrent_dispatches: 1` makes processing serial, and the lookup includes completed tasks |
+| Retries are exhausted before a stage succeeds | The deal stays incomplete | The last-attempt handler sets `needs_human`, comments on the task and raises an alert, so it is never silent |
+| One slow case blocks the serial queue | Later deals wait | Acceptable at tens of deals a day; raise concurrency only after confirming the duplicate-task guard still holds |
 | No trigger exists for the Revenue Arrangement | The DRS stage never starts | Resolve open question 18 in Phase 0; fall back to a narrow sweep for deals waiting on an RA |
 | Asana is the only record of state | Analysts editing or deleting tasks change what the agent believes | Populate-only-empty writes, a dedicated Agent stages field, and idempotent stages that re-derive status from evidence |
 
@@ -547,7 +570,7 @@ Roughly **10.5 weeks** end to end. These estimates were not revisited after remo
 ## 15. Decisions needed to proceed
 
 1. Confirm Cloud Run over Agent Engine (section 2).
-2. Confirm Asana as the only state store, with no database, queue or GCS bucket (section 4).
+2. Confirm Asana as the only state store, with no database or GCS bucket. The Cloud Tasks queue is the only added infrastructure (sections 4 and 5).
 3. Confirm the two-track stage model, in particular that the amendment check runs off the signed quote alone (section 4).
 4. Confirm the mail trigger: Power Automate push (needs the premium licence and DLP position) or Graph polling with one Cloud Scheduler job (section 7a). IT has been asked which it prefers.
 5. Ask IT to answer open questions 9 and 10 on Power Automate licensing and DLP.
@@ -555,5 +578,5 @@ Roughly **10.5 weeks** end to end. These estimates were not revisited after remo
 7. Get the final Asana project naming convention, the SharePoint customer-folder identifier, the TCV bucket boundaries, and the source of the `Product` and `Order Date` fields from Amanda Fausnacht's group.
 8. Get the shared mailbox or alias address once Amanda hears back from the Salesforce team. This is the last item that can block Phase 1.
 9. Confirm the catch-up sweep is deferred until UAT, and decide how the Revenue Arrangement will trigger the DRS stage in the meantime (section 5, open question 18).
-10. Confirm the per-app OpenAPI spec change to `cicd_scripts/setup_infrastructure.sh` with the owners of the shared pipeline (section 9).
+10. Confirm the two additive changes to `cicd_scripts/setup_infrastructure.sh` with the owners of the shared pipeline: the per-app OpenAPI spec and the Cloud Tasks queue creation (section 9).
 11. Confirm whether any LLM stage is needed (open question 20). If none, `agents/new_deal_review_agent/` stays a stub.

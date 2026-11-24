@@ -1,49 +1,51 @@
 flowchart TB
     classDef repo fill:#e8f0fe,stroke:#1a73e8,color:#174ea6
     classDef env fill:#e6f4ea,stroke:#137333,color:#0d652d
+    classDef opt fill:#f1f3f4,stroke:#80868b,color:#3c4043,stroke-dasharray: 5 5
+    classDef new fill:#fef7e0,stroke:#f9ab00,color:#7a5200
 
     subgraph R["sailpoint/gemini-enterprise-agents"]
         direction TB
-        A1["agents/new_deal_review_agent/<br/>agent.py (root_agent)<br/>requirements.txt<br/>agent.env, .agent_engine_config.json<br/>orchestrator/, stages/, connectors/, drs/"]:::repo
-        A2["a2a_apps/new_deal_review_agent/<br/>app.py (FastAPI: webhooks + jobs + A2A)<br/>Procfile, config.json, requirements.txt"]:::repo
+        A1["agents/new_deal_review_agent/<br/>agent.py (stub root_agent, CI requires it)<br/>requirements.txt<br/>agent.env, .agent_engine_config.json<br/>orchestrator/, stages/, connectors/, drs/"]:::repo
+        A2["a2a_apps/new_deal_review_agent/<br/>app.py (FastAPI: /events/* enqueue,<br/>/internal/advance, optional /jobs/poll)<br/>openapi.yaml.tpl (per-app, NEW)<br/>Procfile, config.json, requirements.txt"]:::repo
         A3["tools/<br/>netsuite.py, asana.py, sharepoint_graph.py<br/>(promoted from agent-local once stable)"]:::repo
     end
 
     subgraph CI["GitHub Actions"]
         direction TB
-        T1["test.yml - pytest + evals on every push"]
+        T1["test.yml - pytest on every push"]
         T2["deploy.yml - detects changed agents/ folders"]
         T3["cicd_scripts/deploy_a2a.sh<br/>copies agents/ and tools/ into a2a_apps/<br/>gcloud run deploy --source .<br/>--no-allow-unauthenticated"]
-        T4["cicd_scripts/setup_infrastructure.sh<br/>API Gateway, A2A_PUBLIC_URL<br/>(only if webhooks are enabled)"]
+        T4["cicd_scripts/setup_infrastructure.sh<br/>API Gateway from the per-app openapi.yaml.tpl<br/>CHANGE 1: use per-app spec when present"]:::new
+        T5["setup_infrastructure.sh<br/>CHANGE 2: enable Cloud Tasks API,<br/>create the queue if config.json declares one"]:::new
     end
 
     subgraph ENVS["Promotion path, region us-central1"]
         direction LR
         E1["dev<br/>gemini-enterprise-dev-485017<br/>SF + NS sandboxes"]:::env
         E2["stg<br/>gemini-enterprise-staging"]:::env
-        E3["uat<br/>gemini-enterprise-uat<br/>analyst UAT, shadow mode"]:::env
+        E3["uat<br/>gemini-enterprise-uat<br/>analyst UAT, shadow mode:<br/>test Asana project + test SharePoint folder"]:::env
         E4["prod<br/>sailpoint-gemini-enterprise<br/>live tracker"]:::env
     end
 
-    subgraph RT["Per-environment runtime"]
+    subgraph RT["Per-environment runtime (no database, no GCS bucket)"]
         direction LR
-        RT1["Cloud Run<br/>new-deal-review-agent<br/>min 0, max 5, 1 CPU, 2Gi, 900s"]
-        RT2["Cloud Scheduler jobs<br/>poll 5 min, reconcile 15 min<br/>OIDC as invoker SA"]
-        RT3["Cloud Tasks queue<br/>ndra-advance"]
-        RT4["Firestore (native)<br/>deals, events, runs"]
-        RT5["GCS bucket<br/>ndra-staging"]
-        RT6["Secret Manager<br/>SF, NetSuite, Asana, Entra"]
+        RT1["Cloud Run<br/>new-deal-review-agent<br/>min 0, small max, 1 CPU, 2Gi,<br/>timeout sized for a full case"]
+        RT3["Cloud Tasks queue ndra-advance<br/>max_concurrent_dispatches 1<br/>retries with backoff<br/>dispatch deadline >= Cloud Run timeout"]
+        RT2["Cloud Scheduler job<br/>mail poll every 5 min<br/>ONLY if Graph polling is chosen"]:::opt
+        RT6["Secret Manager<br/>SF integration user, NetSuite,<br/>Asana, Entra, HMAC secret"]
+        RT7["IAM<br/>runtime SA: cloudtasks.enqueuer<br/>invoker SA: run.invoker"]
     end
 
     A1 --> T2
     A2 --> T2
     A3 --> T2
     T1 --> T2
-    T2 --> T3 --> T4
+    T2 --> T3 --> T4 --> T5
     T3 --> E1 --> E2 --> E3 --> E4
     E4 --> RT
-    RT2 --> RT1
-    RT1 --> RT3 --> RT1
-    RT1 --> RT4
-    RT1 --> RT5
+    RT2 -.-> RT1
+    RT1 -->|"enqueue"| RT3
+    RT3 -->|"POST /internal/advance (OIDC)"| RT1
     RT1 --> RT6
+    RT7 -.-> RT3

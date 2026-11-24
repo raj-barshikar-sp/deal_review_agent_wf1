@@ -6,12 +6,12 @@ sequenceDiagram
     participant AGW as GCP API Gateway<br/>public HTTPS endpoint
     participant CR as Cloud Run<br/>new-deal-review-agent<br/>(no-allow-unauthenticated)
     participant SM as Secret Manager
-    participant FS as Firestore
+    participant TQ as Cloud Tasks<br/>ndra-advance
 
-    Note over MBX,FS: How Power Automate reaches a private Cloud Run service
+    Note over MBX,TQ: How Power Automate reaches a private Cloud Run service
 
-    MBX->>PA: trigger "When a new email arrives"<br/>(standard Outlook connector)
-    PA->>PA: filter on subject / sender rule
+    MBX->>PA: trigger "When a new email arrives in a shared mailbox (V2)"
+    PA->>PA: filter on sender and subject rule (not recipient, BCC)
     PA->>KV: read shared secret
     KV-->>PA: secret
 
@@ -29,20 +29,19 @@ sequenceDiagram
     CR->>CR: recompute HMAC, compare with hmac.compare_digest
     CR->>CR: reject if timestamp older than 5 minutes (replay guard)
 
-    CR->>FS: has X-NDRA-Event-Id been seen?
-    alt already processed
-        FS-->>CR: yes
-        CR-->>AGW: 200 OK (no-op, idempotent)
+    CR->>TQ: enqueue task named from X-NDRA-Event-Id
+    alt task name already exists (retried delivery)
+        TQ-->>CR: ALREADY_EXISTS
+        CR-->>AGW: 202 Accepted (no-op, idempotent)
     else new event
-        FS-->>CR: no
-        CR->>FS: record event, create or load deal case
+        TQ-->>CR: task created
         CR-->>AGW: 202 Accepted
-        Note right of CR: work is enqueued to Cloud Tasks,<br/>never done inline, so the flow<br/>gets a fast response
+        Note right of CR: no stage work is done in this request,<br/>so the flow gets a fast response.<br/>The Asana lookup makes repeats harmless later.
     end
 
     AGW-->>PA: 202 Accepted
 
     alt non-2xx or timeout
         PA->>PA: retry policy, exponential, 4 attempts
-        Note over PA,CR: If every retry fails the scheduled<br/>Graph poll still picks the email up.<br/>Push is an accelerator, not the only path.
+        Note over PA,CR: There is no sweep in the first release.<br/>If every retry fails, the email is picked up only if<br/>Graph polling is also enabled. UAT must watch for this.
     end

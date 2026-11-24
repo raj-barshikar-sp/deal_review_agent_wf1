@@ -18,7 +18,7 @@ stateDiagram-v2
         direction TB
         [*] --> pack_in_progress
         pack_in_progress --> pack_complete: signed quote, TAF, PO,<br/>master agreement in SharePoint
-        pack_in_progress --> pack_partial: still missing after 72h<br/>flagged on the Asana task
+        pack_in_progress --> pack_partial: still missing after the first pass<br/>flagged on the Asana task
         pack_complete --> [*]
         pack_partial --> [*]
     }
@@ -44,7 +44,7 @@ stateDiagram-v2
     fork_tracks --> T2
     fork_tracks --> T3
 
-    T2 --> T3: soft link only - not a gate.<br/>If the DRS is built first it records<br/>amendment_status = not yet analysed,<br/>and affected cells are rebuilt later.
+    T2 --> T3: soft link only - not a gate.<br/>If the DRS is built first it records<br/>amendment_status = not yet analysed,<br/>and affected cells are rebuilt the next<br/>time the DRS stage runs.
 
     state join_done <<join>>
     T1 --> join_done
@@ -56,8 +56,9 @@ stateDiagram-v2
       The RA comes from a MANUAL daily job
       run by the revenue team, and only
       as-needed at month end. A case may
-      sit in so_enriched for days.
-      Do not alert on it.
+      sit in so_enriched for days. It
+      advances on a NetSuite event, not a
+      poll (open question 18).
     end note
 
     note right of T1
