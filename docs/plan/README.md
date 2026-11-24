@@ -19,7 +19,7 @@ Design and delivery plan for an event-driven agent that automates Revenue Analys
 1. **Purchase Acknowledgement email** — Create and populate an Asana Deal Review Tracker task; collect the document pack into SharePoint.
 2. **NetSuite sales order** — Match by quote number, enrich deal fields, analyse the executed quote, and when TCV ≥ $250k USD and the Revenue Arrangement exists, generate and upload the Deal Review Sheet.
 
-The agent is **not conversational**: it is triggered by events and periodic reconciliation, not by user prompts.
+The agent is **not conversational**: it is triggered by events and processes each one inline, not by user prompts. State lives in Asana, and a scheduled catch-up sweep is deferred to UAT.
 
 ## Editing diagrams
 

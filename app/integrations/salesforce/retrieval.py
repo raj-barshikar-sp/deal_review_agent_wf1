@@ -5,7 +5,7 @@ import asyncio
 from app.config import DOWNLOAD_DIR
 from app.core.env import load_env
 
-from .auth import pdf_access_token  # TEMPORARY: SALESFORCE_CLIENT_ID/SECRET for PDF retrieval
+from .auth import pdf_access_token
 from .client import download_version, log, rest_query
 from .constants import DOCUMENT_KINDS
 from .documents import (
