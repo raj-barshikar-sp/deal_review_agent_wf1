@@ -10,6 +10,7 @@ from app.core.env import load_env
 from app.core.http import ssl_context
 
 from .constants import DEFAULT_API_VERSION
+from .error_log import log_salesforce_error
 
 
 def instance_url():
@@ -21,6 +22,7 @@ def instance_url():
 
 
 def read_response(request):
+    url = request.full_url
     try:
         with urllib.request.urlopen(request, context=ssl_context(), timeout=30) as response:
             content_type = response.headers.get_content_type()
@@ -29,8 +31,11 @@ def read_response(request):
         content_type = ""
         if error.headers is not None and hasattr(error.headers, "get_content_type"):
             content_type = error.headers.get_content_type()
-        return error.read(), error.code, content_type
+        body = error.read()
+        log_salesforce_error(f"HTTP {error.code} {request.get_method()}", url, error.code, content_type, body)
+        return body, error.code, content_type
     except urllib.error.URLError as error:
+        log_salesforce_error(f"URLError {request.get_method()}", url, None, "", str(error.reason))
         raise RuntimeError(f"Salesforce request failed: {error.reason}") from error
 
 
@@ -46,6 +51,7 @@ def form_post(url, form):
     try:
         body = json.loads(raw.decode())
     except json.JSONDecodeError as exc:
+        log_salesforce_error("auth non-JSON body", url, status, _content_type, raw)
         raise RuntimeError(f"Salesforce auth returned HTTP {status} with a non-JSON body") from exc
     if status >= 400:
         message = ""

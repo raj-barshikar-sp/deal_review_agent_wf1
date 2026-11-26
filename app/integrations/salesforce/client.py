@@ -7,6 +7,7 @@ import urllib.request
 from app.core.log import clean, logger
 
 from .auth import access_token
+from .error_log import log_salesforce_error
 from .http import api_version, instance_url, read_response
 
 
@@ -66,5 +67,6 @@ def download_version(version_id, verbose=False, token_fn=access_token):
     )
     data, content_type = get(url, verbose, token_fn=token_fn)
     if not data.startswith(b"%PDF"):
+        log_salesforce_error(f"ContentVersion {version_id} not a PDF", url, 200, content_type, data)
         raise RuntimeError(f"ContentVersion {version_id} is not a PDF ({content_type}).")
     return data
