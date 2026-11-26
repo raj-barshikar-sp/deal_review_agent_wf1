@@ -3,16 +3,29 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Deal review</title>
+  <title>New Deal Review Agent POC</title>
   <style>
     * { box-sizing: border-box; }
     body {
       margin: 0;
       height: 100vh;
       display: flex;
+      flex-direction: column;
       font: 15px/1.4 system-ui, sans-serif;
       color: #1c1c1c;
     }
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 16px;
+      padding: 10px 20px;
+      border-bottom: 1px solid #d5d5d5;
+      background: white;
+    }
+    .header .title { font-size: 17px; font-weight: 600; color: #0033a1; letter-spacing: 0.2px; }
+    .header img { height: 32px; display: block; }
+    .panes { flex: 1; min-height: 0; display: flex; }
     .pane {
       flex: 1;
       min-width: 0;
@@ -46,31 +59,82 @@
     button.action.secondary { background: white; color: #0b5fff; border: 1px solid #0b5fff; }
     .actions { display: flex; gap: 8px; flex-wrap: wrap; }
     .status { min-height: 1.2em; color: #8a1f1f; }
-    .checks { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 6px; }
-    .check {
-      display: flex;
-      gap: 8px;
-      align-items: center;
-      text-align: left;
-      font: inherit;
-      padding: 6px 8px;
-      border: 1px solid #d5d5d5;
-      border-radius: 6px;
-      background: white;
-      cursor: pointer;
+    /* Vertical process flow: a circle per task, joined by a rail that turns green as steps finish. */
+    .flow { list-style: none; margin: 0; padding: 6px 2px; flex: 1; min-height: 0; overflow: auto; }
+    .step { position: relative; display: flex; gap: 14px; padding-bottom: 22px; }
+    .step:last-child { padding-bottom: 0; }
+    .step:not(:last-child)::before,
+    .step:not(:last-child)::after {
+      content: "";
+      position: absolute;
+      left: 12px;
+      top: 28px;
+      bottom: 2px;
+      width: 2px;
+      margin-left: -1px;
+      background: #d5d5d5;
     }
-    .check:disabled { cursor: default; color: #666; }
-    .check[aria-pressed="true"] { border-color: #0b5fff; background: #eef4ff; }
-    .mark {
-      width: 18px;
-      height: 18px;
-      border: 1px solid #888;
-      border-radius: 3px;
+    .step:not(:last-child)::after {
+      background: #137333;
+      transform: scaleY(0);
+      transform-origin: top;
+      transition: transform 0.6s ease;
+    }
+    .step.done:not(:last-child)::after,
+    .step.error:not(:last-child)::after { transform: scaleY(1); }
+    .step.error:not(:last-child)::after { background: #b3261e; }
+    .dot {
+      position: relative;
+      z-index: 1;
+      flex: none;
+      width: 26px;
+      height: 26px;
+      border: 2px solid #b8b8b8;
+      border-radius: 50%;
+      background: white;
+      color: white;
+      font-size: 14px;
+      font-weight: 700;
+      line-height: 1;
       display: grid;
       place-items: center;
-      flex: none;
+      transition: background 0.3s, border-color 0.3s;
     }
-    .check.ok .mark { background: #137333; color: white; border-color: #137333; }
+    .step.active .dot { border-color: #cfe0ff; border-top-color: #0b5fff; animation: spin 0.9s linear infinite; }
+    .step.done .dot { background: #137333; border-color: #137333; animation: pop 0.4s ease; }
+    .step.error .dot { background: #b3261e; border-color: #b3261e; animation: pop 0.4s ease; }
+    .step.skipped .dot { background: #9a9a9a; border-color: #9a9a9a; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @keyframes pop { 0% { transform: scale(0.6); } 60% { transform: scale(1.18); } 100% { transform: scale(1); } }
+    .step-body { flex: 1; min-width: 0; padding-top: 2px; }
+    .step-title { font-weight: 600; color: #6b6b6b; transition: color 0.3s; }
+    .step.active .step-title { color: #0b5fff; }
+    .step.done .step-title { color: #1c1c1c; }
+    .step.error .step-title { color: #b3261e; }
+    .step-note { min-height: 0; font-size: 13px; color: #555; overflow-wrap: anywhere; }
+    .step-note:empty { display: none; }
+    .subs { margin: 4px 0 0; padding: 0; list-style: none; }
+    .sub { display: flex; gap: 8px; align-items: center; font-size: 13px; padding: 2px 0; animation: fade 0.4s ease; }
+    .sub::before { content: ""; flex: none; width: 10px; height: 10px; border-radius: 50%; background: #137333; }
+    .sub.bad::before { background: #b3261e; }
+    .sub.bad { color: #8a1f1f; }
+    @keyframes fade { from { opacity: 0; transform: translateY(-3px); } to { opacity: 1; transform: none; } }
+    button.linkish, a.linkish {
+      font: inherit;
+      padding: 0;
+      border: 0;
+      background: none;
+      color: #0b5fff;
+      cursor: pointer;
+      text-align: left;
+      text-decoration: underline;
+    }
+    .step-title button.linkish { font-weight: 600; color: inherit; }
+    button.linkish[aria-pressed="true"] { font-weight: 700; }
+    @media (prefers-reduced-motion: reduce) {
+      .step.active .dot, .step.done .dot, .step.error .dot, .sub { animation: none; }
+      .step:not(:last-child)::after { transition: none; }
+    }
     .viewer {
       position: fixed;
       inset: 0;
@@ -116,6 +180,11 @@
   </style>
 </head>
 <body>
+  <header class="header">
+    <span class="title">New Deal Review Agent POC</span>
+    <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA0EAAACzCAMAAAB4kedkAAAAwFBMVEX////+/////v/+/v/+/v7//f79/v79/f78/f7+/P78/P78/P37/P76+/329vvk6/bO1+26wuOSqtjkg9PjftHhftGBks1khsiQb8Q7YrYaZsEZRakJdNAJcc4JZcUFackFN6IENqEDNqIDNqECNqEFNaEDNaEDNaACNaECNaABNaECNKEBNKAANJ8EM6AAM6AAM57PKLLTJbLMJbHSI7G+I68DMJ8AMJ8ALJ0AKpwAKZsBKJsAKJsAJ5oAJZoAIphM8r7UAAAo+ElEQVR42u1di5ajtpbFjQM0wQ/oBMIlc4OLKpq0aZOkb0pAA/X/fzVHYJdfEm+wcevMmjVrEsdlhLZ0tHXO3hw3SsznS+0j/4FjwYJFi+BlzrDW3E9sJFiwaBMKp8XW38sPbBNiwaJFSJy6C6x/P7FNiAWLFiFyKyv8av/7z4pBiAWLxjEXl2bibL/++79fGYJYsOBasAjZJth9Nf/5l5EJLFhwzVmE1A2C3V/mP9/+Xv7EyAQWLJqyCDs/CLZfrW9/f/vEfWRDwoJFQxbBC4LA/+vl27dvf68+sDyOBYtGLEL8HGAEBfa///v7GyMTWLBozCLkAWQcHIS+MTKBBYumLEIeu6+/YQT9vWBkAgsW9ULm1FfMIhQIwmRcTiawTYgFC64WDbeykLcHUE7G4YDyOAYhFixqsAjCgUUICirhJQcQIxNYsGjKIryTcfkuxMgEFizqsQgnANqTcXgT+vsjIxNYsGjCIuyphN/+KfI4VpnAgkUli7C20JfgHEFmjqCcTJizIWLBopxFiJ7PABRs/7L2AGJkAgsW1SzC0zmADmQcIxNYsKhmEfTMCa4QdCDjGJnAgkUFi4DOWYR9Xc+/h4MQIxNYsGjCIlxQCTmZwDYhFizqsgiXCGJkAgsWdBbBvGIRzirjimDCPSxY0FiEDQlAZ2Tct2+/MjKBBYvr+JlTo88+BUEHMu4ba3NgwYLGItgkFuGCjGNkAgsWFBbBIrIIV2QcIxNYsCCwCB8oLMI1ghiZwIJFfRaBQMb9zcgEFizqsggEMo6RCSxYXLMIJQA6J+MYmcCCxVkI/KqERSCQcWwTYsHihEWQZmUsApFKYGQCCxY1WQQigoBMYNJXLFgcrFK3fgWC3ttUWR7HgsUVi/BaBaBLMq4gExijzYJFDRaBSMaxTYgFi5xFEM30KaiOCzJuVDJhxguiJMk4JEkUeJ69Nxb3cwgyKlkEChk3SnncTBAV5fpXK5JwjzCaSwoOSSA/Cze7CviH5ytai5jdyWIsSrKiyJSH/6FZBAqChrcU4kWlwMlytVZVDYeqrlfL4h8q0p1J14nyMTeWCACnAKCHP7xQZFG4LZDmx3VOknjGIpAOQta3b9dkwnCVCTMxfycrVTNMy0YojHCEIbIt09DVlQT/Ur6jd4U3Rfixuq5r6ip30WzzJcsWcQCocrvlH9qbOSF/em29yifWD8IiYKvU56Amgi6phEHJBF6GCblc66YVxlkcosD3PRw+4B1FWRLapqHiuSPz96JyxK0NK4zSNI0j21SVi1kkcmuTGIbI8VWfqQpjP3E5SZ7fxnOXW+mmDU+fRKFlqAtOnHE/BIsgm8lTUBdBmysEYX/iQSCElzRurVsoTZDvbtyzRNPfwj/xAUbFu7oPDMFubqIM+Z7jOPDjkshUubOjGuiIvUXJVURvlvSOIPiSsEXEaZbCxIUlBaNIEW/w8AvdyqIAnt71fJTG8PDzOWMRrg5C12TcQGQCrN5LzQyy0IfZSEO0u/Fhypra8h5yBolTrWy7OfxY+N0R0jmRP0PQd9u5Cjs0zxC08RyvabjOxoGJm2SRlYNIFMdfPTLkeO8P70WhjjMcxiJUUQnDkAnCnFtoZhIH7++Eui86fpRYgCFBuPlQRuh8N3f9zOBOTveAoNS5fgQvOkfQNqj/Ri6XFMeD5d8y1vBFwqgp3NpK7LOf7W4zc/nwlw6wbO5eG7wuIoIGqEwA/kA109Bza/0q7znMIGfg5NuegbRkdwl3f/NmnPyswRG0X/5R9hljSOFHPUzbl7/EhocXHxtC+YN7Td4OiYzrXQWYh99lRKFT/5dtnTAyVpw0uy2jef2D/ZdEPSaYoyAoB1GQ7mA8xkqieHFpJoSzgP2mj5tdCxIx+OEefGHGT41eDYGMK8iEHou0IYPXrNT1Gk0az00tleNvdXSd8aKZOKTfhazVXBgZQRBOkFnabKRtWYLCfps0XV5f1pzIPTaL4DRb3IhkXL9kgswtjQg5zecMivTZrY6ukA5H5JTzKdPf5/GICMLjkZmrUSCEUxnyWcCBc+B4COI5uHMnxYrjhzr6Ji8NXwuJjOuXTFC4lZm5baaQv82M5Y2WPHFuficjaIusJTe/AYLgEJZY6hhZlFSic2uPuAlJnPGGrol+9KZxyj2wCGVUAmBo0Q+ZIAOpk9ot54wN7M9NdiGRW1E1Jrz4fRqPiyDY/8JXbYyrsrlJO007sAMrIyLou729CjsaBkGNWYRSBPVVmYCtVyKn9ZSxb0SgwmqU0nhD9/s7HTc2ggIvSOAszw/OZFOXDzc1xytNkMh3m248CIIwi5A8Nc8MiGRcwWj3ACFYy7sACEPIuAUjJ3N6QkOQE5v8xxshKPA/p4NvAgqnUh/eDyGH5R8SQc1ZhFIyrh8yYc6vzOip05SxTw7uYyLISGmjCfhY7CfR+AiCO1YYkMXQV8kZNe9G9mq0vHpUBLVhEfaN3mQE9eFPzEtcpV5QZbiROn6FD5gu3SmCYBcK1WHXFKlcpOYxEdSKRSgj4/JtqKsK8M+wmDmdU3+4gJmJ94Sg8KYICnw0MB/2IyJIbMUilJNx3ckEmDu7Xfe5s8lMXho/i0sc6qZozvctpDdBUOBE5nLI4pqyLM6H9ewBz0G4CCNuudjTEZT32v3UjduInnuYMTiPk0cviqNzccntuLgjvSIPSkQi369MYR8JQbBitj5u0Mm4rmSC1EcOV6RN1nI+LqUNkyjc0hCUare6Dzq8s91uPeDZkIeMBm1pCYEx6n3QOAiCXTd9af02aGRcV+GeOb+kvof3P+65ENCkWpG2wJwddxPi4cdT0mLgXt6PITdCECbUxQFVWeacGbu0PWjEfGAsBMFrfN367RFEJ+P+7kImVG1BeTddGMUx6CQgp7RuG29CI4vXwIUQZVt3Y1MS+6mL8zbUcMtXlZO6iIEuhBxqSdN4N9wjIQizCMhrv56RNON6IBPmHKzi25J6fRRnyLJADsAEzZGkvHfIjcc+CWHNylfiz8dkstQLgr6GGS1AmiBwSjCEjyPDbUKz2ZJygn3KtPGSuJEQ1IVFqKQSOgj34Aa155I649Q2Qf6mgMVyrYKeR+x7JVnL2OVxEoWQsk+rkzshaBuaGi10w3Szsnp2b9BbMnwMJLGomAUcschqHAR1YREO8vN0BLUmE2ZznlbcnBddW/q6WOvFfUK/UM0wdOhXIKuRi7R5STIJELIja8ULvSAIMxIlAZosKT2Vc7+bQ3bBkxuEXDRue9AoCOrEIlSRcXsy4WPL4mbaX/yCQtxvKYIS5my/j8p4PVUt6h2Mk2kzeex+3yVAyL8C0Okc6oagRJMXMjnykxb09aIv9Mx2yMkMsphmtvEvE4dw3PKQMRDUjUWoQcbl/sQtq4xodA6yYfGVL17/DCbNyqRByB0/jSsgdHoa8V03s85o5K4IKjvcYbFU7YUKIWfYClN+tjQgjTz53Z4T2+q4icAICOrKIhQI+vPfsoNQOzJBpJZmQkamcj8LRNRBdz757LQdsyT4+AwLfZcGIJe29bcgPxXEeO8UuXEQBBCGr6e3GQCXMOSRBHoIdTtDmBQEXUyQDApTcz1ygeLwCOKFZQ+3/iWVca3JBMzEkd+9v0UqrbZYohcn+a83qC/lsWSpncURAn3iONth/SCRGw1BcDiE6oAd7b0NfCYBeOYPHxYPD7THYuzKkOER1JlFqEHGtSMToEkL0U40JZfaCk5KKXfh2g2aHHA93loDuh3CxNyHOOfGRFDu5UlLbJOhR6R4eKt4eFA8Hr3hfnAE1bFK7UrGtaxMAC478mhXcqLQvKLTSYybKCaIeOObr1YrZQ+ocRHES1Bb6FHra34e4eEX8PC5Dv74hgBDIwheX7Tto8qqgoyDTeinn5qDm4yETVaqOCbxauhT0v4byfaIe84D7MJIr2BYBJUU6EGTxfBHw5OHn92i135QBGFJQNQPgsrIuHZkwoKi3u37u3VZqwJQQOSTEBT2KNzsZuJxArmydXgEwcZLqVHzR+oW5QXhVsZowyIIWASrl96BKjKuFZkgUjrUKjk1mnA+/Icr7u4EZ0dAkEwVrttGa056cA3rARE064dFqEXGtdiEeI58tYOTMb7qAEVwQ3A2O2t1f2qZIyCIXiXuRtptlcWnjaCeWIQ6ZFwbMqEEQeVCvpD3v8XpdcRZsP4hEYSnUbohkysjSrc9HIL6YhFqknFAJnzoC0HcvPwiaa1T4sfM4jhlppLvpp0xm90eDUE5i+D1haAqMq5FHkdDEBAC0mgm1EWI82kjiCqfWqddlBfEd8MD8ZZO6diEAdf7NXofwyFI5PtiEeqRcc0thWgIwjozFcI7vESJRg7up5+ey0P5ZYyBIJ7WaIVrBWezklGQ5av7KyhZHZ/QnEvnQsW8LIm3RRAv8Wb6FPSIoEoyrukmJNO8KJ+Gri0AH9n8/y5X67Wqaeq6cPO9cAjnySXR5+SwRP7QbFwEAWNNvlQtQ5CwH4VFMQowDnggBMJI0G+CiMGfF+4RQ7yqkIU6c/wz9OP7ECjuymdjvpBpCLooaudvyCLUI+Makwm0+6BcbG3Ay+38dQnQsAfFKCiJsSuwDW6+2hpX4vVviT0Kgmg3QlQE8fl+vVhruP13E+NRgKEIYSCgOCdvy5JH42Rw/ckKv47ibcAPwe8j/xVyjcssMoISrTuL4Ab9IqiajGtWHkdvbsCPP5RoLU4OlvC6NmmShOAXnsuYBChOUnTmEC5AzSQx1OMV5YwTdfKHVkcuZCQEGU0QlF9Y40nrwShEKHD3sUUIfO2hNVhXl3iTmpWnjlrlwwucSv6M9v4ZQcS1uVacxPu3AYHfRwINyqvrOqEZt7j4KmL+6iPz6r2JDZX1X/vVfqkm45paCuFiFJ9SZL1Th4EQfh/Q2BmmIDHgHpU6/K3rOn6Yhqa+2juEQwf3W3TNmEenHoc8p1iED0GR8rqnLu9B9iCMHwV65uN8FMAN/KS9aevCPwEYhUWDsFR+jiWNUPp2Mlexuw9xFM3DZ3BpqolSBLg5+xnwK+LUwq9DvDzy2ad3GbDyfSULTMC/Ov2Ljc5FIt9anrRMr+dbjWhAJoAVy4aq4gv9QYrQP9kDTa7GSxZuHVJvtIcbXCx9mTvpYnyTTOyjcwSZr9cf2rj22Ahqcg6Cn7/UzDBBrkPpEMfu4GG2NVWBm4tlCCKN0Ga3PkWQ/p00it/3NcAA5pWBEt/ZEn8Fgtdx0S+BSZPd5vhVLk1sZQv/6uQvhk0QxEvzNiYnPZBxjfyJYSyoJk77HtV5zycSMAsPk6BENcsDG0XwgIMZCQgirer4ivIMQYSJe27idlMuDtSQL/YRgMRSs5Jo65TnKJ4TJCFudqKagwOCSCcFH53tQcTjuJMWCOJx237mOyVqTRn07MkXj4qap1fNuLneWYS6ZFzhT1w7j5NpN+k5hLBPd5/HWbjpgOUurpo5/gYcwpe4aH9CCMLq40Gt+yC8C5tpLct03/WiyFxTW366I2jOSUaINuWvA/eNS+MiCJeNuUHvUY+Ma0ImSGVFE/62yIJncj818zI308qWu1OHcOzmu5gSgmSeolyJp6pyKjQBq0gYbepm+J6XvEBWqwyDoDmQAtnWqzRXDk/HYAQEDcAi1CbjmpEJ8/LBwAlVoXfVw2Un9jpO65qF2ymUqE4JQQKtvQFPHPm0KRuSpm2TE7ITZDTpg64Igjv/a6EjQnzZngqmDI8g8UP/LEJxMvtq/e9bLTKhtj+xRLsROmbBLjROC51BxIswddJN7YG3E9iFtMkgCIunkmfVmegi/CQ9DJ+amoPHcCQlGal0RJAk8ma9w4b/+aTCfHAE8aLYP4vQhIxrQibAdlnuHQRJV5QBs49vJwBEbYkFOD1rr+ipmbsx2Sj0LhEk0w++r8dfAhSC0WwDOuQCsc4RquU7ImhR/7S+PfETGxxBg7AIDci4ZmSCVMIlvFOaPr6d2INIbsNwzwXoJ/ebTR37TVOziSAIRJ0p8uPeSbMiltrLNm3Se9/LDOVaNasjgmCFevGb+4kNjSBgEeKXYJjwt7XIuCZkAmxCL9VikJ6zDXMQrU668pt06kKy6DYcdP/VMlAwDQThVfOZIrn4fnOZA8gO2loEGspVItcJQSZW7f/SyGtaGgNB8CZehmARKg0c2voTSzW7aPFlZxJbeZ1HQ46blwSjxdr7FQVfp4Eg/NIpybD7fgbH4qqpHXRxxLs8iXZDULP2af/1Zc9nDIugDlap/ZFx+Tb0c00yYS7W/sVwx4ySBEC0zuum66ZzM6WcrijJWoNJIEgueek+Osw7QekCIGKjURcEZcYaNVKi3qSHKoYhEYRNSRNnKADVJ+OakAm4eKZ2hrXNi6VssyjZkmo7rPSY194dgmQsg0x56blmy7y0k6R2vFz9km4IMhOvoatlsRgMiiCl8zD1QsYVZEJd4R65GfUBzALQc36eztVx76a53DwIgkSlRIr/KLiITZNf/O6+rGJPCAqQ1XRDfMJ55MAIUgZkEZqRcU3IBCjiM5qdcH0o2YpSIBYqaof31asW6jOvvSMEFX4wJXYwsAcVt0G9XLI/h6euSB0RFKDGsw9L3/GDIgjXRg3GIuylEGtTCZhM+Fi3Xm3ZmCTKy3aRCTrN5fsQFsTtN68dH0HSgtzQnv+BtfFKtSQrrGX5IruPu4/CZr8L9IKg5hPVS3IMDIegYVmEpmRcAzIh51nTxtmn7/hxhGuHJaG3FPEOEVTiYbeANls7Dejv3MkKJk7qaRQ+hxc1nh0Q1DzAke+wB512Nzi0SmHvvJ+isrthYBahKRnXSDNBannXl9cOqyWpXI3sxd8PtLu9SwRdt1oeAnszpwkqqTQ/2GJCt1g/hZJ4TzvR8ukRQb6/9f3KNC5XpM077NITP+aM1mGXnXwqiys77AZmERqScXsV4PoQWhqp32ID9dz4FZogaDVz4rx8VYFGO7TvoMxbjO8PQTAREkqAaY9TymI6+6yLbnR29N1zPQjoCy1/B056Og17QhA0xfrgPoTgZZY3nvj5FshDQbd5FsSkDpaei6jwlhqaRWhMxjXTTIAR117DNuV8jp9aGqWFRSoXi3DdMI1t09yv6CiNA8e/NwQBg08Lz688emPRMFx8WHb14sI1WxpHEKAVEfplQ7DdH6z6QxAufITVywb7ITuChu2yv25TtO96URqBubLb+cMjqDYZ16wygcOFi7hZscU25G9QDB1xEslNQTHpCPK2UYILhQ5yDKu1bgZZZf/D6AhqHU/7QpjyLciFqkMsVAQKU2tVN2AdKZvFYPZ82mfQGUFekAVYlQfch0BySzPtshcAHet8bs0hKyexUGhqV/CvTmN+YxahORkH29DH+gKMUDqwNFDktJAp/uLiFhaFqFf0TK9VjPYlQpIiw//wBbNlpxX5+GQQ9CeQz1hGCkvXUr/adyO0H4YilqCak6LnKnavJwQ50YuxPs3AV7qVuCUHIYKnRy+Ki9gqNXaGB1AzMq6pAOOh/7gFhsB/Xr0arxkvUdrOAHR+aqqwnCnSoV5yJohybokalm9Dk0HQ4SapbA57KMFMDEgbFgS5LOez2E6ok96L1ZNOnY4Iylc+/BKw2LBQiMiujISWcvqBTzAW6AVBY7AIjcm4hmRCoduygEZs5LRoYQl3VwNGd3YLntEr9C7zVwQE3PBDMlm6GE0FQc7pFb5H2wIsjT8vMeQlBatPUWex893kxZ4Q5MbGglPOFIYF+Ot69LmUShgAQQou2RgDQA3JuOb+xLkOk5VGntN0NnkIaRejK1Hz/2e8ZZGv+kHPdFXaoTgRBOECgrmwT2VpAMLW9fOrKQmzWNAjKvdwNMXriCDcI/RBIrwAPXPp26oyAIJgrX0dnkVoTsa1shSSCy2ztIKoJUHo9XyByut5fMrSu+YWPHU9WpZBaBoI+vLe1Ak8AqWw9ikDj1VlRpQb5LSQ2i/xPjO7Ieg5NhcigULlFZrRNHQ96tc6nN0RJPZd+dUjGQeb0MefmllDYgwtQE8TU8uNQOQh+yxLxr2GHuU0vCobXFzsXMJATAFBX3aH5SQXkvPIDwIAopTcwSzWws8+5T87HB07VvXYa/KfF2YwobdBXSuXzggajUVoQ8Y1EmA8xRC30kwHbty9Bmci2FqWonA6st+JZqvIWpePLW64QX9OGEFfgvigO049DObriNjcZ/3E27gTgkqswXDLrUNDUP9MwmgsQgsyrjmZcOorAPczubKzW5edezqtfJxzlJUM1ysrVWNKv4mdAIIc9Po+e2gzOO9VKBkG2IUo5RzH43y3LM5e8yLdFZaYf2MJ4yuv9q4IwizCeABqTMY1JxPeXWdme3eBAG6qt26thM494Wpoao6FSkzlqJq0a4n7R9AmPBH5FMmzPHjOKvxVqa54uFx10RlBblLi9EkTQcP2oFcXQh0RBPMEjcQitCHj2pAJ79c5haQIONyYYLUQY7mROpWPh/s+SAW+u+TyRF6sI6Lr+5NEEAiunmSptGMQLs+pcFoEToxIZcJBqIcsrnSCS7yKSMM/AILGZBGK0fmrKRkHm9BPrRBUeC3kg7BSddMGSxG/6lTkgLCGfBhYopzfJtPr6VDTNqH7RhBoVGK5ceW0OJ30veclorQDNjENPgpodcviSlzXaS1A/SOIn4/JIrQh41r4ExMbMTG1AE5LaViuG79FhzZKyuKLz8G8WE/R25scgrDGKy6zlU5PdKS/7aOLdlPyGOikxkf//UaoA4LIBTonQfRy6R1BuQqNHYwaW78pldCOTLhwqc3HYqli66zS8l3n4MAqkNN4fBato5RVcpl0twiCtt3MhlKLUzduoPTJO7FR2R8PuRQ5lT3q/7RH0NnD13cX7htBw8mTlpFxv/3zrfkm9JHjOvvWKzmIDDsLnJKTkLk4pC8kFneTabxc75raJBc03CeCcv0VKDVfXZRaSOTDzDZSZ3VUWohnKO9gpdBNq6dsJVuAf6A9PILgzVBuve6JjOtCJlyR3EpRP51QmTnffy0WSHIaBjUVa06qqSBEPgjdHYJ8d+NChWga5DXWF55luCLBJXd7VuvtUdoi3udmBwTZb6WM6IK8dfaMIFhlx2URWpNxncgEwk0RFD5SxQE2+6YYsofSqYx05UHoThDke9RwPaheQ1GWRFYhoXflm0m2V4U/vagxDAp5J3AOOqjDIQiOb+Hg5yDMIkTO2ABqQcZ1JxOu66e1F0SRXIbJkS/DMtG7BL8CoWax4fo+zkFfURRTIwpDD9rjdLXQQp4THJpIvw9bQ8q1/ODDP33iIWoxOIIGZxJw/V32FIyPoOZk3J5M+MD1hiGwWKcJHvn76jiFeACAevqaluiYBiZfKI6LoG1oaCWBuztzLMwVksNPPsk9OgZajcGDIOgWLEJrMq4fMuEsT6Y2tTtpXrSjEHP46SGoTO3qfS4oVMEvMoKcVK932/jACMIb7Na/BYJakHEN/YnrQUhLnssOQg+DoESTFzI1oLtzzpd6fDME0Z/NC26CoFZkHJAJH/pEENYiJV95uolRlsWZ00MQJ3cYJ5bFke/7ZjdhEQ5k3Lc2e1AT4Z6aFbVk692CLOiBSSB3BUwLQWQuDpe21SvMIKnzHpRQp4wgRbgJi9CejOudTODEGaV02IssbLf6KGz2IAiqOQwwj8nuWdNH0K1YhA5kHJHRFkRyCHXSE0oaty1mB+VG1f9c/0Y1fQAEkbUi/MBd19iEZFpFTveahFsjCJrYd6+3gtDur1YI6ptMwLXXDh1BkMOjLlU94NSeOI+AIDIIklqFy2SEHCxVpowg/T///e9/bhb//e2XX1vF5UlooVNE1bVaKQa5C2uPIEppKKYS5vUqS+27uFHtiCCFXB5z7PEpGwNaoozWBz/G6WZx0Lv5+x9//H6jMD79+ql5AIA+XDaBvO1l388ifrPmXFcEUef2y7pOd4NMIyomtwcRe9VqDQNO4p4oFgrziSNILPpl/u+PP/7vFmH+0m4H+nDZDm+GtnMdm12dukeRUjy9RxDNONSpU9cP3y7RFLenxiSQuzRqDMNMILe3HovqprwH8fkl9B5Ev4+NoP/8+ksPAKKeZGDWqLzSlkkAnknBahTYgJj0end2jUN0idzptBAEI0EcpvwXSpUOzk6p5NS0q3qgARqmCX8TEP3eAkHXAIIRpKgMOUl15YAwo+ipw8TMcwyYk680vRe58r52aVKFPqeFIIkiuIhl3xS+1JuTonV0nJoTRxDeZpVCiQOOROOC6LdPPQAotzxyaWJ8VTbd+Eb1mSLGnL+/OW7z3lLm5KLqy3WqX8jEEISbVJ+C5sMwU2iayf67pffkEfQOouVa/x0fiUYDkf6pBwDlqZJPVVRWKoR8aFU9+L5P2lMNRB0waMKrEIyDutVXatHhxBBErU4CwbiyYVCIN9Lnt7GPgKBcUmXf/YxB9Ps4IDI+9QCggjEm39puX9XyeaPQJH3xjU/xn1LFQrwK0dIFbl3cBo+BII6fUZaaL+hFpc1irPqLyIvI5ri6PQiC3rufV3sQ3R8ZRwYQnQzYS9LK5bq8r1tym/duf0TGaRyiCd6qVAdwmDxrK3wOHgVBdDdzEBqHqS6RLTQ0RGuZPapaPg6CTsm5UUDUjIyjAKhUsNiJsK8AV2KvQMHe9phkYD6b4n6CwG2IIx6kZWwgRNednx6C4JtfKGAAuwsdPiBeMflw1x3SXF1PSuoeCkHjMtyNyDh6TTZNmHcPodX1yz284RXVohtTbcJReHRLs++Mc1kb4XL/gWteHZX2jUwNQdycpzr5+UGCTeT4owvWLCfo1mZKdeA6Uax8NATlDDf++vXwIGpAxpU0NdDzLIinGLtk5c6M58YOQm4z90T3a5/JFZeu+C1/SSxtiSfPwceOFxX82sGH0v8SPBKC4M9TVTn95wSMTIvjNHgwCnsz2V1J68zL8ckeEEGjMdz1ybjSrqBS3wkHhfnLnSsy7sPk5yABnONpbSCq1WnuzSGeWJPRGQGUWLm+DZ49e40B8P6KQueunIi7I4ifUWj94nGCbGdq68NsxirlLylVCQnb3h0f7CERNBLDXZuMK2+rowriFGTRl/TFUJeXFYHmrmSX2MBlrHAcCY6a7WGJ3DCzTU1dHUysQVY4ibyqzt/JIQi+WytphvFBqjGzQfDH0HXDtOwsCkrWkC1ST5/+MRE0BsNdl4yr6EudCXyp7rcTpKFlFII0y9VqDQL0VpSUvWEvPKXBS05C+XTYoDgLLBNmjwlzJ02RW905Pz0Ezedlm1Au2RiEUZJloDsXBpsyn5m8pnv2AyDo3cRqORDDXZOMq2zsLrHJ3S+QoMaZhbaFw/aTLEKlJsUwxAo/Ox/dp3K9zwDB7EniCDLDWk5f00NQvgmVawL4W9fZbDaOW65e42936xO14GkhCFsYiHwLEA3CcNcj46qVEfjSPKvYKFx7GyAUIoQCd1NhxOVG5zexcyjuCr0KX0vPdZxc/bNWTBBBQLD1Y/FxUdE9JQQdrv8k4U4Y7jpkXB1pEVz/WT13fd/fwv9Wfs6JLxvHZFrtXftZND0E4dKeXQ8+bR72TJlPEUH4Vy/XqooZE7Hp6AnY71zom+GuQcbV6+mWaK6zLcLfvVx1Lsh928xOEUF5YUJnmxx/e7HDTwZB8J+A50fylkWWvmoOoUEY7moyrqYowlwos55vFk+ZftXzgr8/fP7REcRDIW7cVd3JhhxO5iaIILh3NN5iU9d0w3qztRYQGoDhriTjVnVVfqV+Mgz8VlKTcFSUcHHylx8cQYVsRDeJzqfEvLBenQiCwM7SfDOLq7+Far1p9dSaaCAqyLnOIKoi4xrI8sg9uZE7UI06E4h832s7iPqPgyD4NW1H4bTYV+QmiCCwQYK/tlLX6zXc/a2s7+uODHcvNdwVZFwjXat+RPSfEa1vGXdCtHEq89EDISgfhQ4Q8gjDOw0EwdBiZQczRAmyjCW3zkyh8zVRDwx3KRnXTBgORGO6n/Yd3O0i07vFmsv0f0XW1wdCEGYT4tZmBR4eXoWbJoKMN5WbmZlpmMGbLsDH11xH0fYeGO4/ysi4psqKPA9P9dLpLPQUvqhl3RBaFDQ8BXixqZFu8ieLoFyGNfB6HN5JIGjGiZa1AMEVOP+AJ5/J8eqb3p2awV/dieH+o4SMay5NKuCFYdvhoGvjQm6lNIV5DZ+aMePRWs3cR0IQVBNor6gNI2dHxOGdBIJ4boXwLSEgaLHUAUH5/9/DaOa8gpIz3K14hf/80h+A8kROC1HbeyHPzYBqkSvKh6xk87XBpIGFingZO10EYQipdtQYQr6Dh1fhpokgAY5BuJLCjKE2LMYb0dI2exrPTgw3lUpoJ449A67ISp1WmRzUhxrLqipC6As3629zX0EUbc6rD4YgPDPXZtPN3kEZdCMq3GQRtIqMGdYmhLpz2EoFbrkxexvQWfsabhqCWqvL4ymeouYYcvwsb8WrnjyKjqJ63w+bmpF3pj0aguCrlgYKG4yy95zAHSR5eCeBILhOdU38U99U9c1a8ot8T+oxZmc13L93JOM+dbBngHmiWRna+M3wkyBYIevU3Iq4ATWrgVHfDkMdnxUfEEGHUXiqN8qeE8aQwQk8N1kE8bOZaa/mOZMAF6vYP/RN4/qNViolRDLu07KLvwm8p5Vuwxzf1k3QN0GCTJWrOcVAxFHRrLTi++FL880ePv2ICMJHzqUOK5VTncu5XpiWDe802Gwlh4wICIJC/TddFM2XFdd7NGe4SWRcNwAV29DasLPwS42NCLcOZQF+wfWbPmDmr2D2hPQeIw+yfltf4hnwoAg6joK/KVtKvE0QR5a2wB0ok0YQLmiC1n/dVGew/RqAJ4MbJHhcwz0Dcq4miK7JuM4Awjoi+dsNM+RvPDqKfG/joTS2sI7CXGz+/VGCvM1VswR8qw+N3/hL5b3Kgk2I1wsEET90gaCI+EXnCLLJ8do7gvLLjJVmwih/JTZc+b6DW7+3JtZikUsduogPv1ufIeg76TPfqxBEHnsygr5TBk45yGUUZXH5WqDBYUgYBkJnNdzV5NwVldADgAopK3wqAxCBYtkGYORf9sM5sHSGWQQSB6uG+Nmncvj77ThDsMw6nl8EfKsH34pw9TtX6APB7clb9nYV2ZtxhiCL9KG39BxB5C+yzhBE+hr8Kb13BMGwybjI0rBQFuNh2OAGQ9yEtfXcDez/KE0DM5dhKRWnx8dz4q8+24MM0mfSqj2IMvZkBJE/+16bjXt0bX01w5PbeLPWrYqz+2e4LxHUD4DyhqaC2jDtMMtChFuxnXxRgR5k8E8LU+j6Ng0MH4qeXNXsUYqE1dpGWQKtrxiYKIQG8o2Z65ocvhQuEnRiqMcuPnCb1MgfWh2t8sDDh/wZTXifDgLtM/jPDfHC58Uog/AEirIsDnEPMApzuYTQBW2KXL1H5iscaKofXuBU2mNJpS2BlCG7RhD1LxyRgq9K3hAIYlgZZuYFbtCYCTXJuXMyrjcAvRfvLVYqFo95gdmdFqsKzPfPICqjq6tFnpHxrXNFoRDn0bHAiOP7G9uE7pF80igDD+/9BC/Je40iHQutWLBGWVh1RVfXuT7SUYZx+iFyCizJ8Hh4Y5WG/3uzOjXc52RcnwAqJnmxAy+WK1XViqVO00C1Z1ns/VJr+ByOAtLh+3HR+7LQ1HqXX9yvbgtinL8Bhfyhsy/iyZ9RanxmsRCHBNHhJyyWoIW0XC6lQx5Qj56p8/BSnVG8zkRqDFnFXxDP2RN4SDmXzhhrgapiuM/IuL4BtFfRJM4eYSELfC+0rnKS5fOKIvDcjxczGIbT2czLPQ3vve24spy/ZXHUXb6c4T4h44YA0KFsG9RolWKpUxQsV8T3/P28KIoC/yOC5wxHh3jshxwfuHuVEiLDfaQShgMQCxZTD3oN9zuCGIBYsKhxTXTFcO/JOAYgFizaMNx7Mg4A9IGNEAsWjRnuP4xfGIBYsGhMzr2DCCteMQCxYNEIRPwJw812IBYs2qmUFE6TvzEAsWDBtWa4DW05YwBiMcH4f18BxNTJbZdhAAAAAElFTkSuQmCC" alt="SailPoint">
+  </header>
+  <main class="panes">
   <section class="pane">
     <h1>Purchase acknowledgement</h1>
     <label>Subject <input id="subject" autocomplete="off"></label>
@@ -125,15 +194,16 @@
       <button class="action" id="ack-button" type="button">Send purchase acknowledgement</button>
     </div>
     <p class="status" id="ack-status"></p>
-    <div class="checks" id="ack-checks"></div>
+    <ol class="flow" id="ack-flow" aria-label="Purchase acknowledgement progress"></ol>
   </section>
   <section class="pane">
     <h1>Quote lines</h1>
     <label>Quote number <input id="quote" autocomplete="off" placeholder="Q-123456"></label>
     <button class="action" id="quote-button" type="button">Fetch quote lines</button>
     <p class="status" id="quote-status"></p>
-    <div class="checks" id="quote-checks"></div>
+    <ol class="flow" id="quote-flow" aria-label="Quote lines progress"></ol>
   </section>
+  </main>
   <div id="viewer" class="viewer" hidden>
     <div class="viewer-panel" role="dialog" aria-modal="true" aria-labelledby="viewer-title">
       <div class="viewer-bar">
@@ -268,22 +338,108 @@
       showViewerItem();
     }
 
-    function renderChecks(container, checks) {
+    const STATE_MARK = { done: "✓", error: "✕", skipped: "–" };
+    const REDUCED = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, REDUCED ? 0 : ms));
+
+    function buildFlow(container, titles) {
       container.replaceChildren();
+      return titles.map((title) => {
+        const li = document.createElement("li");
+        li.className = "step pending";
+        const dot = document.createElement("span");
+        dot.className = "dot";
+        const body = document.createElement("div");
+        body.className = "step-body";
+        const head = document.createElement("div");
+        head.className = "step-title";
+        head.textContent = title;
+        const note = document.createElement("div");
+        note.className = "step-note";
+        const subs = document.createElement("ul");
+        subs.className = "subs";
+        body.append(head, note, subs);
+        li.append(dot, body);
+        container.append(li);
+        return { li, dot, head, note, subs, title };
+      });
+    }
+
+    function setStep(step, state, note) {
+      step.li.className = "step " + state;
+      step.dot.textContent = STATE_MARK[state] || "";
+      if (note !== undefined) step.note.textContent = note;
+    }
+
+    // The server does each flow in one request, so progress while waiting is an estimate:
+    // each step is shown as running for roughly delays[i] ms. The reply then sets the real outcome.
+    function startProgress(steps, delays) {
+      let index = 0;
+      let timer = 0;
+      setStep(steps[0], "active", "Working…");
+      const advance = () => {
+        if (index >= steps.length - 1) return;
+        setStep(steps[index], "done", "");
+        index += 1;
+        setStep(steps[index], "active", "Working…");
+        if (index < steps.length - 1) timer = setTimeout(advance, delays[index]);
+      };
+      if (steps.length > 1) timer = setTimeout(advance, delays[0]);
+      return () => clearTimeout(timer);
+    }
+
+    function linkTo(url, text) {
+      if (!/^https:\/\//i.test(url || "")) return null;
+      const anchor = document.createElement("a");
+      anchor.className = "linkish";
+      anchor.href = url;
+      anchor.target = "_blank";
+      anchor.rel = "noopener noreferrer";
+      anchor.textContent = text;
+      return anchor;
+    }
+
+    // outcomes[i] = { state, note, open, subs: [{ ok, label, open, url }], url, urlText }
+    async function settleFlow(steps, outcomes) {
       const openable = [];
-      for (const item of checks) {
-        const button = document.createElement("button");
-        button.type = "button";
-        button.className = "check" + (item.ok ? " ok" : "");
-        button.disabled = !item.open;
-        const mark = document.createElement("span");
-        mark.className = "mark";
-        mark.textContent = item.ok ? "✓" : "";
-        const text = document.createElement("span");
-        text.textContent = item.label;
-        button.append(mark, text);
-        if (item.open) openable.push({ open: item.open, button });
-        container.append(button);
+      for (let i = 0; i < steps.length; i++) {
+        const step = steps[i];
+        const outcome = outcomes[i];
+        setStep(step, outcome.state, outcome.note || "");
+        if (outcome.open) {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = "linkish";
+          button.textContent = step.title;
+          step.head.replaceChildren(button);
+          openable.push({ open: outcome.open, button });
+        }
+        step.subs.replaceChildren();
+        for (const sub of outcome.subs || []) {
+          const item = document.createElement("li");
+          item.className = "sub" + (sub.ok ? "" : " bad");
+          if (sub.open) {
+            const button = document.createElement("button");
+            button.type = "button";
+            button.className = "linkish";
+            button.textContent = sub.label;
+            item.append(button);
+            openable.push({ open: sub.open, button });
+          } else {
+            item.append(sub.url ? linkTo(sub.url, sub.label) || sub.label : sub.label);
+          }
+          step.subs.append(item);
+        }
+        if (outcome.url) {
+          const anchor = linkTo(outcome.url, outcome.urlText || "Open in SharePoint");
+          if (anchor) {
+            const item = document.createElement("li");
+            item.className = "sub";
+            item.append(anchor);
+            step.subs.append(item);
+          }
+        }
+        if (i < steps.length - 1) await sleep(260);
       }
       openable.forEach((entry, index) => {
         entry.button.addEventListener("click", () => {
@@ -292,28 +448,135 @@
       });
     }
 
-    function documentChecks(documents) {
-      const docs = (documents && documents.documents) || {};
-      const checks = [];
-      for (const [key, label] of KINDS) {
-        const item = docs[key] || { status: "missing" };
-        const paths = item.path ? [item.path] : item.paths || [];
-        const titles = item.title ? [item.title] : item.titles || [];
-        if (item.status !== "found" || !paths.length) {
-          checks.push({ ok: false, label: label + " — " + (item.status || "missing") });
-          continue;
-        }
-        paths.forEach((path, index) => {
-          const title = titles[index] || label;
-          checks.push({
-            ok: true,
-            label: title,
-            open: () => ({ title, path }),
-          });
+    const ACK_STEPS = [
+      "Read purchase acknowledgement email",
+      "Create Asana task",
+      "Retrieve documents from Salesforce",
+      "Upload documents to SharePoint",
+    ];
+    const QUOTE_STEPS = [
+      "Fetch quote lines from Salesforce",
+      "Capture report screenshot",
+      "Update Deal Review Sheet in SharePoint",
+    ];
+    const ACK_DELAYS = [900, 4000, 12000];
+    const QUOTE_DELAYS = [2500, 45000];
+
+    function ackOutcomes(result, payload) {
+      const docs = payload.documents || null;
+      const failure = errorText(result.data);
+      const outcomes = [];
+      outcomes.push(
+        payload.task_name
+          ? { state: "done", note: payload.task_name }
+          : { state: "error", note: failure || "Email was not accepted." }
+      );
+      if (!payload.task_name) {
+        outcomes.push({ state: "skipped", note: "Not run" });
+      } else if (payload.asana_gid) {
+        outcomes.push({
+          state: "done",
+          note: payload.asana_url ? "Task created" : "",
+          url: payload.asana_url,
+          urlText: "Open task in Asana",
+          open: () => ({
+            title: "Asana task " + payload.task_name,
+            records: [{
+              task_name: payload.task_name,
+              description: payload.description,
+              delivery_date: payload.delivery_date,
+              period: payload.period,
+              quote_number: payload.quote_number,
+              asana_url: payload.asana_url || "",
+            }],
+          }),
         });
+      } else {
+        outcomes.push({ state: "error", note: failure || "Asana task was not created." });
       }
-      return checks;
+      if (!docs) {
+        outcomes.push({ state: "skipped", note: "Not run" });
+      } else {
+        const found = docs.documents || {};
+        const subs = [];
+        let count = 0;
+        for (const [key, label] of KINDS) {
+          const item = found[key] || { status: "missing" };
+          const paths = item.path ? [item.path] : item.paths || [];
+          const titles = item.title ? [item.title] : item.titles || [];
+          if (item.status !== "found" || !paths.length) {
+            subs.push({ ok: false, label: label + " — " + (item.status || "missing") });
+            continue;
+          }
+          paths.forEach((path, index) => {
+            count += 1;
+            const title = titles[index] || label;
+            subs.push({ ok: true, label: title, open: () => ({ title, path }) });
+          });
+        }
+        outcomes.push(
+          count
+            ? { state: "done", note: count + " document" + (count === 1 ? "" : "s") + " found", subs }
+            : { state: "error", note: docs.error_message || "No documents were retrieved.", subs }
+        );
+      }
+      const sp = docs && docs.sharepoint;
+      if (!sp) outcomes.push({ state: "skipped", note: "Not run" });
+      else if (sp.status === "uploaded") {
+        outcomes.push({
+          state: "done",
+          note: sp.folder || "",
+          subs: Object.keys(sp.files || {}).map((name) => ({ ok: true, label: name, url: sp.files[name] })),
+          url: sp.folder_url,
+          urlText: "Open SharePoint folder",
+        });
+      } else if (sp.status === "skipped") outcomes.push({ state: "skipped", note: sp.reason || "Skipped" });
+      else outcomes.push({ state: "error", note: sp.error_message || "Upload failed." });
+      return outcomes;
     }
+
+    function quoteOutcomes(result, payload) {
+      const records = payload.records || [];
+      const outcomes = [];
+      outcomes.push(
+        records.length
+          ? {
+              state: "done",
+              note: (payload.record_count ?? records.length) + " lines",
+              open: () => ({ title: "Quote lines " + (payload.quote_number || ""), records }),
+            }
+          : { state: "error", note: errorText(result.data) || "No quote lines were returned." }
+      );
+      outcomes.push(
+        payload.screenshot_path
+          ? {
+              state: "done",
+              note: payload.screenshot_taken_at || "",
+              open: () => ({
+                title: "Screenshot " + (payload.screenshot_taken_at || ""),
+                ...(payload.screenshot_png_base64
+                  ? { image: "data:image/png;base64," + payload.screenshot_png_base64 }
+                  : { path: payload.screenshot_path }),
+              }),
+            }
+          : { state: "error", note: errorText(result.data) || "Screenshot failed." }
+      );
+      const drs = payload.drs;
+      if (!drs) outcomes.push({ state: "skipped", note: "Not run" });
+      else if (drs.status === "created" || drs.status === "updated") {
+        outcomes.push({
+          state: "done",
+          note: "Sheet " + drs.status + ": " + (drs.file || ""),
+          url: drs.url,
+          urlText: "Open Deal Review Sheet",
+        });
+      } else if (drs.status === "skipped") outcomes.push({ state: "skipped", note: drs.reason || "Skipped" });
+      else outcomes.push({ state: "error", note: drs.error_message || "Sheet update failed." });
+      return outcomes;
+    }
+
+    buildFlow(document.getElementById("ack-flow"), ACK_STEPS);
+    buildFlow(document.getElementById("quote-flow"), QUOTE_STEPS);
 
     async function post(url, body) {
       const response = await fetch(url, {
@@ -338,85 +601,54 @@
       ].join("\n");
     });
 
-    document.getElementById("ack-button").addEventListener("click", async () => {
-      const button = document.getElementById("ack-button");
-      const status = document.getElementById("ack-status");
-      const checks = document.getElementById("ack-checks");
+    async function runFlow({ button, status, container, titles, delays, call, outcomesFor }) {
       button.disabled = true;
-      status.textContent = "Working…";
+      status.textContent = "";
+      const steps = buildFlow(container, titles);
+      const stop = startProgress(steps, delays);
       try {
-        const result = await post(API + "/purchase-acknowledge", {
+        const result = await call();
+        stop();
+        await settleFlow(steps, outcomesFor(result, payloadOf(result.data)));
+        status.textContent = result.ok ? "" : errorText(result.data) || "Request failed.";
+      } catch (error) {
+        stop();
+        await settleFlow(
+          steps,
+          steps.map((_, index) => (index === 0 ? { state: "error", note: String(error) } : { state: "skipped", note: "Not run" }))
+        );
+        status.textContent = String(error);
+      } finally {
+        button.disabled = false;
+      }
+    }
+
+    document.getElementById("ack-button").addEventListener("click", () =>
+      runFlow({
+        button: document.getElementById("ack-button"),
+        status: document.getElementById("ack-status"),
+        container: document.getElementById("ack-flow"),
+        titles: ACK_STEPS,
+        delays: ACK_DELAYS,
+        call: () => post(API + "/purchase-acknowledge", {
           subject: document.getElementById("subject").value,
           body: document.getElementById("body").value,
-        });
-        const payload = payloadOf(result.data);
-        const items = [];
-        if (payload.task_name) {
-          items.push({
-            ok: Boolean(payload.asana_gid),
-            label: payload.asana_gid ? "Asana task " + payload.task_name : "Task fields extracted",
-            open: () => ({
-              title: "Asana task " + payload.task_name,
-              records: [{
-                task_name: payload.task_name,
-                description: payload.description,
-                delivery_date: payload.delivery_date,
-                period: payload.period,
-                quote_number: payload.quote_number,
-                asana_url: payload.asana_url || "",
-              }],
-            }),
-          });
-        }
-        items.push(...documentChecks(payload.documents));
-        renderChecks(checks, items);
-        status.textContent = result.ok ? "" : errorText(result.data) || "Request failed.";
-      } catch (error) {
-        status.textContent = String(error);
-      } finally {
-        button.disabled = false;
-      }
-    });
+        }),
+        outcomesFor: ackOutcomes,
+      })
+    );
 
-    document.getElementById("quote-button").addEventListener("click", async () => {
-      const button = document.getElementById("quote-button");
-      const status = document.getElementById("quote-status");
-      const checks = document.getElementById("quote-checks");
-      button.disabled = true;
-      status.textContent = "Working…";
-      try {
-        const result = await post(API + "/quote-lines-drs", {
-          quote_number: document.getElementById("quote").value.trim(),
-        });
-        const payload = payloadOf(result.data);
-        const records = payload.records || [];
-        const items = [{
-          ok: result.ok || records.length > 0,
-          label: "Quote lines (" + (payload.record_count ?? records.length) + ")",
-          open: records.length || result.ok ? () => ({ title: "Quote lines " + (payload.quote_number || ""), records }) : null,
-        }];
-        if (payload.screenshot_path) {
-          items.push({
-            ok: true,
-            label: "Screenshot " + (payload.screenshot_taken_at || ""),
-            open: () => ({
-              title: "Screenshot " + (payload.screenshot_taken_at || ""),
-              ...(payload.screenshot_png_base64
-                ? { image: "data:image/png;base64," + payload.screenshot_png_base64 }
-                : { path: payload.screenshot_path }),
-            }),
-          });
-        } else {
-          items.push({ ok: false, label: "Screenshot — missing" });
-        }
-        renderChecks(checks, items);
-        status.textContent = result.ok ? "" : errorText(result.data) || "Request failed.";
-      } catch (error) {
-        status.textContent = String(error);
-      } finally {
-        button.disabled = false;
-      }
-    });
+    document.getElementById("quote-button").addEventListener("click", () =>
+      runFlow({
+        button: document.getElementById("quote-button"),
+        status: document.getElementById("quote-status"),
+        container: document.getElementById("quote-flow"),
+        titles: QUOTE_STEPS,
+        delays: QUOTE_DELAYS,
+        call: () => post(API + "/quote-lines-drs", { quote_number: document.getElementById("quote").value.trim() }),
+        outcomesFor: quoteOutcomes,
+      })
+    );
 
     document.getElementById("viewer-prev").addEventListener("click", () => stepViewer(-1));
     document.getElementById("viewer-next").addEventListener("click", () => stepViewer(1));
